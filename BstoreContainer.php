@@ -26,66 +26,40 @@
  */
 
 /**
- * PHPExcel_Shared_Escher
+ * PHPExcel_Shared_Escher_DggContainer_BstoreContainer
  *
  * @category   PHPExcel
  * @package    PHPExcel_Shared_Escher
  * @copyright  Copyright (c) 2006 - 2014 PHPExcel (http://www.codeplex.com/PHPExcel)
  */
-class PHPExcel_Shared_Escher
+class PHPExcel_Shared_Escher_DggContainer_BstoreContainer
 {
 	/**
-	 * Drawing Group Container
+	 * BLIP Store Entries. Each of them holds one BLIP (Big Large Image or Picture)
 	 *
-	 * @var PHPExcel_Shared_Escher_DggContainer
+	 * @var array
 	 */
-	private $_dggContainer;
+	private $_BSECollection = array();
 
 	/**
-	 * Drawing Container
+	 * Add a BLIP Store Entry
 	 *
-	 * @var PHPExcel_Shared_Escher_DgContainer
+	 * @param PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE $BSE
 	 */
-	private $_dgContainer;
-
-	/**
-	 * Get Drawing Group Container
-	 *
-	 * @return PHPExcel_Shared_Escher_DgContainer
-	 */
-	public function getDggContainer()
+	public function addBSE($BSE)
 	{
-		return $this->_dggContainer;
+		$this->_BSECollection[] = $BSE;
+		$BSE->setParent($this);
 	}
 
 	/**
-	 * Set Drawing Group Container
+	 * Get the collection of BLIP Store Entries
 	 *
-	 * @param PHPExcel_Shared_Escher_DggContainer $dggContainer
+	 * @return PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE[]
 	 */
-	public function setDggContainer($dggContainer)
+	public function getBSECollection()
 	{
-		return $this->_dggContainer = $dggContainer;
-	}
-
-	/**
-	 * Get Drawing Container
-	 *
-	 * @return PHPExcel_Shared_Escher_DgContainer
-	 */
-	public function getDgContainer()
-	{
-		return $this->_dgContainer;
-	}
-
-	/**
-	 * Set Drawing Container
-	 *
-	 * @param PHPExcel_Shared_Escher_DgContainer $dgContainer
-	 */
-	public function setDgContainer($dgContainer)
-	{
-		return $this->_dgContainer = $dgContainer;
+		return $this->_BSECollection;
 	}
 
 }

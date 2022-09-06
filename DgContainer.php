@@ -26,66 +26,58 @@
  */
 
 /**
- * PHPExcel_Shared_Escher
+ * PHPExcel_Shared_Escher_DgContainer
  *
  * @category   PHPExcel
  * @package    PHPExcel_Shared_Escher
  * @copyright  Copyright (c) 2006 - 2014 PHPExcel (http://www.codeplex.com/PHPExcel)
  */
-class PHPExcel_Shared_Escher
+class PHPExcel_Shared_Escher_DgContainer
 {
 	/**
-	 * Drawing Group Container
+	 * Drawing index, 1-based.
 	 *
-	 * @var PHPExcel_Shared_Escher_DggContainer
+	 * @var int
 	 */
-	private $_dggContainer;
+	private $_dgId;
 
 	/**
-	 * Drawing Container
+	 * Last shape index in this drawing
 	 *
-	 * @var PHPExcel_Shared_Escher_DgContainer
+	 * @var int
 	 */
-	private $_dgContainer;
+	private $_lastSpId;
 
-	/**
-	 * Get Drawing Group Container
-	 *
-	 * @return PHPExcel_Shared_Escher_DgContainer
-	 */
-	public function getDggContainer()
+	private $_spgrContainer = null;
+
+	public function getDgId()
 	{
-		return $this->_dggContainer;
+		return $this->_dgId;
 	}
 
-	/**
-	 * Set Drawing Group Container
-	 *
-	 * @param PHPExcel_Shared_Escher_DggContainer $dggContainer
-	 */
-	public function setDggContainer($dggContainer)
+	public function setDgId($value)
 	{
-		return $this->_dggContainer = $dggContainer;
+		$this->_dgId = $value;
 	}
 
-	/**
-	 * Get Drawing Container
-	 *
-	 * @return PHPExcel_Shared_Escher_DgContainer
-	 */
-	public function getDgContainer()
+	public function getLastSpId()
 	{
-		return $this->_dgContainer;
+		return $this->_lastSpId;
 	}
 
-	/**
-	 * Set Drawing Container
-	 *
-	 * @param PHPExcel_Shared_Escher_DgContainer $dgContainer
-	 */
-	public function setDgContainer($dgContainer)
+	public function setLastSpId($value)
 	{
-		return $this->_dgContainer = $dgContainer;
+		$this->_lastSpId = $value;
+	}
+
+	public function getSpgrContainer()
+	{
+		return $this->_spgrContainer;
+	}
+
+	public function setSpgrContainer($spgrContainer)
+	{
+		return $this->_spgrContainer = $spgrContainer;
 	}
 
 }

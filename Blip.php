@@ -26,66 +26,66 @@
  */
 
 /**
- * PHPExcel_Shared_Escher
+ * PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE_Blip
  *
  * @category   PHPExcel
  * @package    PHPExcel_Shared_Escher
  * @copyright  Copyright (c) 2006 - 2014 PHPExcel (http://www.codeplex.com/PHPExcel)
  */
-class PHPExcel_Shared_Escher
+class PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE_Blip
 {
 	/**
-	 * Drawing Group Container
+	 * The parent BSE
 	 *
-	 * @var PHPExcel_Shared_Escher_DggContainer
+	 * @var PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE
 	 */
-	private $_dggContainer;
+	private $_parent;
 
 	/**
-	 * Drawing Container
+	 * Raw image data
 	 *
-	 * @var PHPExcel_Shared_Escher_DgContainer
+	 * @var string
 	 */
-	private $_dgContainer;
+	private $_data;
 
 	/**
-	 * Get Drawing Group Container
+	 * Get the raw image data
 	 *
-	 * @return PHPExcel_Shared_Escher_DgContainer
+	 * @return string
 	 */
-	public function getDggContainer()
+	public function getData()
 	{
-		return $this->_dggContainer;
+		return $this->_data;
 	}
 
 	/**
-	 * Set Drawing Group Container
+	 * Set the raw image data
 	 *
-	 * @param PHPExcel_Shared_Escher_DggContainer $dggContainer
+	 * @param string
 	 */
-	public function setDggContainer($dggContainer)
+	public function setData($data)
 	{
-		return $this->_dggContainer = $dggContainer;
+		$this->_data = $data;
 	}
 
 	/**
-	 * Get Drawing Container
+	 * Set parent BSE
 	 *
-	 * @return PHPExcel_Shared_Escher_DgContainer
+	 * @param PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE $parent
 	 */
-	public function getDgContainer()
+	public function setParent($parent)
 	{
-		return $this->_dgContainer;
+		$this->_parent = $parent;
 	}
 
 	/**
-	 * Set Drawing Container
+	 * Get parent BSE
 	 *
-	 * @param PHPExcel_Shared_Escher_DgContainer $dgContainer
+	 * @return PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE $parent
 	 */
-	public function setDgContainer($dgContainer)
+	public function getParent()
 	{
-		return $this->_dgContainer = $dgContainer;
+		return $this->_parent;
 	}
 
 }
