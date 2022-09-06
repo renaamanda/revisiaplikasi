@@ -21,32 +21,34 @@
  * @category   PHPExcel
  * @package    PHPExcel_Reader
  * @copyright  Copyright (c) 2006 - 2014 PHPExcel (http://www.codeplex.com/PHPExcel)
- * @license	http://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt	LGPL
- * @version	##VERSION##, ##DATE##
+ * @license    http://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt	LGPL
+ * @version    ##VERSION##, ##DATE##
  */
 
 
 /**
- * PHPExcel_Reader_Exception
+ * PHPExcel_Reader_IReader
  *
  * @category   PHPExcel
  * @package    PHPExcel_Reader
  * @copyright  Copyright (c) 2006 - 2014 PHPExcel (http://www.codeplex.com/PHPExcel)
  */
-class PHPExcel_Reader_Exception extends PHPExcel_Exception {
+interface PHPExcel_Reader_IReader
+{
 	/**
-	 * Error handler callback
+	 * Can the current PHPExcel_Reader_IReader read the file?
 	 *
-	 * @param mixed $code
-	 * @param mixed $string
-	 * @param mixed $file
-	 * @param mixed $line
-	 * @param mixed $context
+	 * @param 	string 		$pFilename
+	 * @return 	boolean
 	 */
-	public static function errorHandlerCallback($code, $string, $file, $line, $context) {
-		$e = new self($string, $code);
-		$e->line = $line;
-		$e->file = $file;
-		throw $e;
-	}
+	public function canRead($pFilename);
+
+	/**
+	 * Loads PHPExcel from file
+	 *
+	 * @param 	string 		$pFilename
+     * @return  PHPExcel
+	 * @throws 	PHPExcel_Reader_Exception
+	 */
+	public function load($pFilename);
 }

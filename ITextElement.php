@@ -2,8 +2,6 @@
 /**
  * PHPExcel
  *
- * Copyright (c) 2006 - 2014 PHPExcel
- *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
@@ -19,34 +17,48 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
  * @category   PHPExcel
- * @package    PHPExcel_Reader
+ * @package    PHPExcel_RichText
  * @copyright  Copyright (c) 2006 - 2014 PHPExcel (http://www.codeplex.com/PHPExcel)
- * @license	http://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt	LGPL
- * @version	##VERSION##, ##DATE##
+ * @license    http://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt	LGPL
+ * @version    ##VERSION##, ##DATE##
  */
 
 
 /**
- * PHPExcel_Reader_Exception
+ * PHPExcel_RichText_ITextElement
  *
  * @category   PHPExcel
- * @package    PHPExcel_Reader
+ * @package    PHPExcel_RichText
  * @copyright  Copyright (c) 2006 - 2014 PHPExcel (http://www.codeplex.com/PHPExcel)
  */
-class PHPExcel_Reader_Exception extends PHPExcel_Exception {
+interface PHPExcel_RichText_ITextElement
+{
 	/**
-	 * Error handler callback
+	 * Get text
 	 *
-	 * @param mixed $code
-	 * @param mixed $string
-	 * @param mixed $file
-	 * @param mixed $line
-	 * @param mixed $context
+	 * @return string	Text
 	 */
-	public static function errorHandlerCallback($code, $string, $file, $line, $context) {
-		$e = new self($string, $code);
-		$e->line = $line;
-		$e->file = $file;
-		throw $e;
-	}
+	public function getText();
+
+	/**
+	 * Set text
+	 *
+	 * @param 	$pText string	Text
+	 * @return PHPExcel_RichText_ITextElement
+	 */
+	public function setText($pText = '');
+
+	/**
+	 * Get font
+	 *
+	 * @return PHPExcel_Style_Font
+	 */
+	public function getFont();
+
+	/**
+	 * Get hash code
+	 *
+	 * @return string	Hash code
+	 */
+	public function getHashCode();
 }
