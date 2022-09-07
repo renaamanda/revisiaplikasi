@@ -19,689 +19,650 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
  * @category   PHPExcel
- * @package    PHPExcel_Writer_Excel2007
+ * @package    PHPExcel_Style
  * @copyright  Copyright (c) 2006 - 2014 PHPExcel (http://www.codeplex.com/PHPExcel)
- * @license    http://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt	LGPL
+ * @license    http://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt    LGPL
  * @version    ##VERSION##, ##DATE##
  */
 
 
 /**
- * PHPExcel_Writer_Excel2007_Style
+ * PHPExcel_Style
  *
  * @category   PHPExcel
- * @package    PHPExcel_Writer_Excel2007
+ * @package    PHPExcel_Style
  * @copyright  Copyright (c) 2006 - 2014 PHPExcel (http://www.codeplex.com/PHPExcel)
  */
-class PHPExcel_Writer_Excel2007_Style extends PHPExcel_Writer_Excel2007_WriterPart
+class PHPExcel_Style extends PHPExcel_Style_Supervisor implements PHPExcel_IComparable
 {
+    /**
+     * Font
+     *
+     * @var PHPExcel_Style_Font
+     */
+    protected $_font;
+
+    /**
+     * Fill
+     *
+     * @var PHPExcel_Style_Fill
+     */
+    protected $_fill;
+
+    /**
+     * Borders
+     *
+     * @var PHPExcel_Style_Borders
+     */
+    protected $_borders;
+
+    /**
+     * Alignment
+     *
+     * @var PHPExcel_Style_Alignment
+     */
+    protected $_alignment;
+
+    /**
+     * Number Format
+     *
+     * @var PHPExcel_Style_NumberFormat
+     */
+    protected $_numberFormat;
+
+    /**
+     * Conditional styles
+     *
+     * @var PHPExcel_Style_Conditional[]
+     */
+    protected $_conditionalStyles;
+
+    /**
+     * Protection
+     *
+     * @var PHPExcel_Style_Protection
+     */
+    protected $_protection;
+
+    /**
+     * Index of style in collection. Only used for real style.
+     *
+     * @var int
+     */
+    protected $_index;
+
+    /**
+     * Use Quote Prefix when displaying in cell editor. Only used for real style.
+     *
+     * @var boolean
+     */
+    protected $_quotePrefix = false;
+
+    /**
+     * Create a new PHPExcel_Style
+     *
+     * @param boolean $isSupervisor Flag indicating if this is a supervisor or not
+     * 		Leave this value at default unless you understand exactly what
+     *    its ramifications are
+     * @param boolean $isConditional Flag indicating if this is a conditional style or not
+     *   	Leave this value at default unless you understand exactly what
+     *    its ramifications are
+     */
+    public function __construct($isSupervisor = false, $isConditional = false)
+    {
+        // Supervisor?
+        $this->_isSupervisor = $isSupervisor;
+
+        // Initialise values
+        $this->_conditionalStyles	= array();
+        $this->_font              = new PHPExcel_Style_Font($isSupervisor, $isConditional);
+        $this->_fill              = new PHPExcel_Style_Fill($isSupervisor, $isConditional);
+        $this->_borders           = new PHPExcel_Style_Borders($isSupervisor, $isConditional);
+        $this->_alignment         = new PHPExcel_Style_Alignment($isSupervisor, $isConditional);
+        $this->_numberFormat      = new PHPExcel_Style_NumberFormat($isSupervisor, $isConditional);
+        $this->_protection        = new PHPExcel_Style_Protection($isSupervisor, $isConditional);
+
+        // bind parent if we are a supervisor
+        if ($isSupervisor) {
+            $this->_font->bindParent($this);
+            $this->_fill->bindParent($this);
+            $this->_borders->bindParent($this);
+            $this->_alignment->bindParent($this);
+            $this->_numberFormat->bindParent($this);
+            $this->_protection->bindParent($this);
+        }
+    }
+
+    /**
+     * Get the shared style component for the currently active cell in currently active sheet.
+     * Only used for style supervisor
+     *
+     * @return PHPExcel_Style
+     */
+    public function getSharedComponent()
+    {
+        $activeSheet = $this->getActiveSheet();
+        $selectedCell = $this->getActiveCell(); // e.g. 'A1'
+
+        if ($activeSheet->cellExists($selectedCell)) {
+            $xfIndex = $activeSheet->getCell($selectedCell)->getXfIndex();
+        } else {
+            $xfIndex = 0;
+        }
+
+        return $this->_parent->getCellXfByIndex($xfIndex);
+    }
+
+    /**
+     * Get parent. Only used for style supervisor
+     *
+     * @return PHPExcel
+     */
+    public function getParent()
+    {
+        return $this->_parent;
+    }
+
 	/**
-	 * Write styles to XML format
+	 * Build style array from subcomponents
 	 *
-	 * @param 	PHPExcel	$pPHPExcel
-	 * @return 	string 		XML Output
-	 * @throws 	PHPExcel_Writer_Exception
+	 * @param array $array
+	 * @return array
 	 */
-	public function writeStyles(PHPExcel $pPHPExcel = null)
+	public function getStyleArray($array)
 	{
-		// Create XML writer
-		$objWriter = null;
-		if ($this->getParentWriter()->getUseDiskCaching()) {
-			$objWriter = new PHPExcel_Shared_XMLWriter(PHPExcel_Shared_XMLWriter::STORAGE_DISK, $this->getParentWriter()->getDiskCachingDirectory());
-		} else {
-			$objWriter = new PHPExcel_Shared_XMLWriter(PHPExcel_Shared_XMLWriter::STORAGE_MEMORY);
-		}
-
-		// XML header
-		$objWriter->startDocument('1.0','UTF-8','yes');
-
-		// styleSheet
-		$objWriter->startElement('styleSheet');
-		$objWriter->writeAttribute('xml:space', 'preserve');
-		$objWriter->writeAttribute('xmlns', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
-
-			// numFmts
-			$objWriter->startElement('numFmts');
-			$objWriter->writeAttribute('count', $this->getParentWriter()->getNumFmtHashTable()->count());
-
-				// numFmt
-				for ($i = 0; $i < $this->getParentWriter()->getNumFmtHashTable()->count(); ++$i) {
-					$this->_writeNumFmt($objWriter, $this->getParentWriter()->getNumFmtHashTable()->getByIndex($i), $i);
-				}
-
-			$objWriter->endElement();
-
-			// fonts
-			$objWriter->startElement('fonts');
-			$objWriter->writeAttribute('count', $this->getParentWriter()->getFontHashTable()->count());
-
-				// font
-				for ($i = 0; $i < $this->getParentWriter()->getFontHashTable()->count(); ++$i) {
-					$this->_writeFont($objWriter, $this->getParentWriter()->getFontHashTable()->getByIndex($i));
-				}
-
-			$objWriter->endElement();
-
-			// fills
-			$objWriter->startElement('fills');
-			$objWriter->writeAttribute('count', $this->getParentWriter()->getFillHashTable()->count());
-
-				// fill
-				for ($i = 0; $i < $this->getParentWriter()->getFillHashTable()->count(); ++$i) {
-					$this->_writeFill($objWriter, $this->getParentWriter()->getFillHashTable()->getByIndex($i));
-				}
-
-			$objWriter->endElement();
-
-			// borders
-			$objWriter->startElement('borders');
-			$objWriter->writeAttribute('count', $this->getParentWriter()->getBordersHashTable()->count());
-
-				// border
-				for ($i = 0; $i < $this->getParentWriter()->getBordersHashTable()->count(); ++$i) {
-					$this->_writeBorder($objWriter, $this->getParentWriter()->getBordersHashTable()->getByIndex($i));
-				}
-
-			$objWriter->endElement();
-
-			// cellStyleXfs
-			$objWriter->startElement('cellStyleXfs');
-			$objWriter->writeAttribute('count', 1);
-
-				// xf
-				$objWriter->startElement('xf');
-					$objWriter->writeAttribute('numFmtId', 	0);
-					$objWriter->writeAttribute('fontId', 	0);
-					$objWriter->writeAttribute('fillId', 	0);
-					$objWriter->writeAttribute('borderId',	0);
-				$objWriter->endElement();
-
-			$objWriter->endElement();
-
-			// cellXfs
-			$objWriter->startElement('cellXfs');
-			$objWriter->writeAttribute('count', count($pPHPExcel->getCellXfCollection()));
-
-				// xf
-				foreach ($pPHPExcel->getCellXfCollection() as $cellXf) {
-					$this->_writeCellStyleXf($objWriter, $cellXf, $pPHPExcel);
-				}
-
-			$objWriter->endElement();
-
-			// cellStyles
-			$objWriter->startElement('cellStyles');
-			$objWriter->writeAttribute('count', 1);
-
-				// cellStyle
-				$objWriter->startElement('cellStyle');
-					$objWriter->writeAttribute('name', 		'Normal');
-					$objWriter->writeAttribute('xfId', 		0);
-					$objWriter->writeAttribute('builtinId',	0);
-				$objWriter->endElement();
-
-			$objWriter->endElement();
-
-			// dxfs
-			$objWriter->startElement('dxfs');
-			$objWriter->writeAttribute('count', $this->getParentWriter()->getStylesConditionalHashTable()->count());
-
-				// dxf
-				for ($i = 0; $i < $this->getParentWriter()->getStylesConditionalHashTable()->count(); ++$i) {
-					$this->_writeCellStyleDxf($objWriter, $this->getParentWriter()->getStylesConditionalHashTable()->getByIndex($i)->getStyle());
-				}
-
-			$objWriter->endElement();
-
-			// tableStyles
-			$objWriter->startElement('tableStyles');
-			$objWriter->writeAttribute('defaultTableStyle', 'TableStyleMedium9');
-			$objWriter->writeAttribute('defaultPivotStyle', 'PivotTableStyle1');
-			$objWriter->endElement();
-
-		$objWriter->endElement();
-
-		// Return
-		return $objWriter->getData();
+		return array('quotePrefix' => $array);
 	}
 
-	/**
-	 * Write Fill
-	 *
-	 * @param 	PHPExcel_Shared_XMLWriter 	$objWriter 		XML Writer
-	 * @param 	PHPExcel_Style_Fill			$pFill			Fill style
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	private function _writeFill(PHPExcel_Shared_XMLWriter $objWriter = null, PHPExcel_Style_Fill $pFill = null)
-	{
-		// Check if this is a pattern type or gradient type
-		if ($pFill->getFillType() === PHPExcel_Style_Fill::FILL_GRADIENT_LINEAR ||
-			$pFill->getFillType() === PHPExcel_Style_Fill::FILL_GRADIENT_PATH) {
-			// Gradient fill
-			$this->_writeGradientFill($objWriter, $pFill);
-		} elseif($pFill->getFillType() !== NULL) {
-			// Pattern fill
-			$this->_writePatternFill($objWriter, $pFill);
-		}
-	}
+    /**
+     * Apply styles from array
+     *
+     * <code>
+     * $objPHPExcel->getActiveSheet()->getStyle('B2')->applyFromArray(
+     *         array(
+     *             'font'    => array(
+     *                 'name'      => 'Arial',
+     *                 'bold'      => true,
+     *                 'italic'    => false,
+     *                 'underline' => PHPExcel_Style_Font::UNDERLINE_DOUBLE,
+     *                 'strike'    => false,
+     *                 'color'     => array(
+     *                     'rgb' => '808080'
+     *                 )
+     *             ),
+     *             'borders' => array(
+     *                 'bottom'     => array(
+     *                     'style' => PHPExcel_Style_Border::BORDER_DASHDOT,
+     *                     'color' => array(
+     *                         'rgb' => '808080'
+     *                     )
+     *                 ),
+     *                 'top'     => array(
+     *                     'style' => PHPExcel_Style_Border::BORDER_DASHDOT,
+     *                     'color' => array(
+     *                         'rgb' => '808080'
+     *                     )
+     *                 )
+     *             ),
+     *             'quotePrefix'    => true
+     *         )
+     * );
+     * </code>
+     *
+     * @param    array    $pStyles    Array containing style information
+     * @param     boolean        $pAdvanced    Advanced mode for setting borders.
+     * @throws    PHPExcel_Exception
+     * @return PHPExcel_Style
+     */
+    public function applyFromArray($pStyles = null, $pAdvanced = true)
+    {
+        if (is_array($pStyles)) {
+            if ($this->_isSupervisor) {
 
-	/**
-	 * Write Gradient Fill
-	 *
-	 * @param 	PHPExcel_Shared_XMLWriter 	$objWriter 		XML Writer
-	 * @param 	PHPExcel_Style_Fill			$pFill			Fill style
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	private function _writeGradientFill(PHPExcel_Shared_XMLWriter $objWriter = null, PHPExcel_Style_Fill $pFill = null)
-	{
-		// fill
-		$objWriter->startElement('fill');
+                $pRange = $this->getSelectedCells();
 
-			// gradientFill
-			$objWriter->startElement('gradientFill');
-				$objWriter->writeAttribute('type', 		$pFill->getFillType());
-				$objWriter->writeAttribute('degree', 	$pFill->getRotation());
+                // Uppercase coordinate
+                $pRange = strtoupper($pRange);
 
-				// stop
-				$objWriter->startElement('stop');
-				$objWriter->writeAttribute('position', '0');
+                // Is it a cell range or a single cell?
+                if (strpos($pRange, ':') === false) {
+                    $rangeA = $pRange;
+                    $rangeB = $pRange;
+                } else {
+                    list($rangeA, $rangeB) = explode(':', $pRange);
+                }
 
-					// color
-					$objWriter->startElement('color');
-					$objWriter->writeAttribute('rgb', $pFill->getStartColor()->getARGB());
-					$objWriter->endElement();
+                // Calculate range outer borders
+                $rangeStart = PHPExcel_Cell::coordinateFromString($rangeA);
+                $rangeEnd     = PHPExcel_Cell::coordinateFromString($rangeB);
 
-				$objWriter->endElement();
+                // Translate column into index
+                $rangeStart[0]    = PHPExcel_Cell::columnIndexFromString($rangeStart[0]) - 1;
+                $rangeEnd[0]    = PHPExcel_Cell::columnIndexFromString($rangeEnd[0]) - 1;
 
-				// stop
-				$objWriter->startElement('stop');
-				$objWriter->writeAttribute('position', '1');
+                // Make sure we can loop upwards on rows and columns
+                if ($rangeStart[0] > $rangeEnd[0] && $rangeStart[1] > $rangeEnd[1]) {
+                    $tmp = $rangeStart;
+                    $rangeStart = $rangeEnd;
+                    $rangeEnd = $tmp;
+                }
 
-					// color
-					$objWriter->startElement('color');
-					$objWriter->writeAttribute('rgb', $pFill->getEndColor()->getARGB());
-					$objWriter->endElement();
+                // ADVANCED MODE:
 
-				$objWriter->endElement();
+                if ($pAdvanced && isset($pStyles['borders'])) {
 
-			$objWriter->endElement();
+                    // 'allborders' is a shorthand property for 'outline' and 'inside' and
+                    //        it applies to components that have not been set explicitly
+                    if (isset($pStyles['borders']['allborders'])) {
+                        foreach (array('outline', 'inside') as $component) {
+                            if (!isset($pStyles['borders'][$component])) {
+                                $pStyles['borders'][$component] = $pStyles['borders']['allborders'];
+                            }
+                        }
+                        unset($pStyles['borders']['allborders']); // not needed any more
+                    }
 
-		$objWriter->endElement();
-	}
+                    // 'outline' is a shorthand property for 'top', 'right', 'bottom', 'left'
+                    //        it applies to components that have not been set explicitly
+                    if (isset($pStyles['borders']['outline'])) {
+                        foreach (array('top', 'right', 'bottom', 'left') as $component) {
+                            if (!isset($pStyles['borders'][$component])) {
+                                $pStyles['borders'][$component] = $pStyles['borders']['outline'];
+                            }
+                        }
+                        unset($pStyles['borders']['outline']); // not needed any more
+                    }
 
-	/**
-	 * Write Pattern Fill
-	 *
-	 * @param 	PHPExcel_Shared_XMLWriter			$objWriter 		XML Writer
-	 * @param 	PHPExcel_Style_Fill					$pFill			Fill style
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	private function _writePatternFill(PHPExcel_Shared_XMLWriter $objWriter = null, PHPExcel_Style_Fill $pFill = null)
-	{
-		// fill
-		$objWriter->startElement('fill');
+                    // 'inside' is a shorthand property for 'vertical' and 'horizontal'
+                    //        it applies to components that have not been set explicitly
+                    if (isset($pStyles['borders']['inside'])) {
+                        foreach (array('vertical', 'horizontal') as $component) {
+                            if (!isset($pStyles['borders'][$component])) {
+                                $pStyles['borders'][$component] = $pStyles['borders']['inside'];
+                            }
+                        }
+                        unset($pStyles['borders']['inside']); // not needed any more
+                    }
 
-			// patternFill
-			$objWriter->startElement('patternFill');
-				$objWriter->writeAttribute('patternType', $pFill->getFillType());
+                    // width and height characteristics of selection, 1, 2, or 3 (for 3 or more)
+                    $xMax = min($rangeEnd[0] - $rangeStart[0] + 1, 3);
+                    $yMax = min($rangeEnd[1] - $rangeStart[1] + 1, 3);
 
-				if ($pFill->getFillType() !== PHPExcel_Style_Fill::FILL_NONE) {
-					// fgColor
-					if ($pFill->getStartColor()->getARGB()) {
-						$objWriter->startElement('fgColor');
-						$objWriter->writeAttribute('rgb', $pFill->getStartColor()->getARGB());
-						$objWriter->endElement();
-					}
-				}
-				if ($pFill->getFillType() !== PHPExcel_Style_Fill::FILL_NONE) {
-					// bgColor
-					if ($pFill->getEndColor()->getARGB()) {
-						$objWriter->startElement('bgColor');
-						$objWriter->writeAttribute('rgb', $pFill->getEndColor()->getARGB());
-						$objWriter->endElement();
-					}
-				}
+                    // loop through up to 3 x 3 = 9 regions
+                    for ($x = 1; $x <= $xMax; ++$x) {
+                        // start column index for region
+                        $colStart = ($x == 3) ?
+                            PHPExcel_Cell::stringFromColumnIndex($rangeEnd[0])
+                                : PHPExcel_Cell::stringFromColumnIndex($rangeStart[0] + $x - 1);
 
-			$objWriter->endElement();
+                        // end column index for region
+                        $colEnd = ($x == 1) ?
+                            PHPExcel_Cell::stringFromColumnIndex($rangeStart[0])
+                                : PHPExcel_Cell::stringFromColumnIndex($rangeEnd[0] - $xMax + $x);
 
-		$objWriter->endElement();
-	}
+                        for ($y = 1; $y <= $yMax; ++$y) {
 
-	/**
-	 * Write Font
-	 *
-	 * @param 	PHPExcel_Shared_XMLWriter		$objWriter 		XML Writer
-	 * @param 	PHPExcel_Style_Font				$pFont			Font style
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	private function _writeFont(PHPExcel_Shared_XMLWriter $objWriter = null, PHPExcel_Style_Font $pFont = null)
-	{
-		// font
-		$objWriter->startElement('font');
-			//	Weird! The order of these elements actually makes a difference when opening Excel2007
-			//		files in Excel2003 with the compatibility pack. It's not documented behaviour,
-			//		and makes for a real WTF!
+                            // which edges are touching the region
+                            $edges = array();
 
-			// Bold. We explicitly write this element also when false (like MS Office Excel 2007 does
-			// for conditional formatting). Otherwise it will apparently not be picked up in conditional
-			// formatting style dialog
-			if ($pFont->getBold() !== NULL) {
-				$objWriter->startElement('b');
-					$objWriter->writeAttribute('val', $pFont->getBold() ? '1' : '0');
-				$objWriter->endElement();
-			}
+                            // are we at left edge
+                            if ($x == 1) {
+                                $edges[] = 'left';
+                            }
 
-			// Italic
-			if ($pFont->getItalic() !== NULL) {
-				$objWriter->startElement('i');
-					$objWriter->writeAttribute('val', $pFont->getItalic() ? '1' : '0');
-				$objWriter->endElement();
-			}
+                            // are we at right edge
+                            if ($x == $xMax) {
+                                $edges[] = 'right';
+                            }
 
-			// Strikethrough
-			if ($pFont->getStrikethrough() !== NULL) {
-				$objWriter->startElement('strike');
-				$objWriter->writeAttribute('val', $pFont->getStrikethrough() ? '1' : '0');
-				$objWriter->endElement();
-			}
+                            // are we at top edge?
+                            if ($y == 1) {
+                                $edges[] = 'top';
+                            }
 
-			// Underline
-			if ($pFont->getUnderline() !== NULL) {
-				$objWriter->startElement('u');
-				$objWriter->writeAttribute('val', $pFont->getUnderline());
-				$objWriter->endElement();
-			}
+                            // are we at bottom edge?
+                            if ($y == $yMax) {
+                                $edges[] = 'bottom';
+                            }
 
-			// Superscript / subscript
-			if ($pFont->getSuperScript() === TRUE || $pFont->getSubScript() === TRUE) {
-				$objWriter->startElement('vertAlign');
-				if ($pFont->getSuperScript() === TRUE) {
-					$objWriter->writeAttribute('val', 'superscript');
-				} else if ($pFont->getSubScript() === TRUE) {
-					$objWriter->writeAttribute('val', 'subscript');
-				}
-				$objWriter->endElement();
-			}
+                            // start row index for region
+                            $rowStart = ($y == 3) ?
+                                $rangeEnd[1] : $rangeStart[1] + $y - 1;
 
-			// Size
-			if ($pFont->getSize() !== NULL) {
-				$objWriter->startElement('sz');
-					$objWriter->writeAttribute('val', $pFont->getSize());
-				$objWriter->endElement();
-			}
+                            // end row index for region
+                            $rowEnd = ($y == 1) ?
+                                $rangeStart[1] : $rangeEnd[1] - $yMax + $y;
 
-			// Foreground color
-			if ($pFont->getColor()->getARGB() !== NULL) {
-				$objWriter->startElement('color');
-				$objWriter->writeAttribute('rgb', $pFont->getColor()->getARGB());
-				$objWriter->endElement();
-			}
+                            // build range for region
+                            $range = $colStart . $rowStart . ':' . $colEnd . $rowEnd;
 
-			// Name
-			if ($pFont->getName() !== NULL) {
-				$objWriter->startElement('name');
-					$objWriter->writeAttribute('val', $pFont->getName());
-				$objWriter->endElement();
-			}
+                            // retrieve relevant style array for region
+                            $regionStyles = $pStyles;
+                            unset($regionStyles['borders']['inside']);
 
-		$objWriter->endElement();
-	}
+                            // what are the inner edges of the region when looking at the selection
+                            $innerEdges = array_diff( array('top', 'right', 'bottom', 'left'), $edges );
 
-	/**
-	 * Write Border
-	 *
-	 * @param 	PHPExcel_Shared_XMLWriter			$objWriter 		XML Writer
-	 * @param 	PHPExcel_Style_Borders				$pBorders		Borders style
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	private function _writeBorder(PHPExcel_Shared_XMLWriter $objWriter = null, PHPExcel_Style_Borders $pBorders = null)
-	{
-		// Write border
-		$objWriter->startElement('border');
-			// Diagonal?
-			switch ($pBorders->getDiagonalDirection()) {
-				case PHPExcel_Style_Borders::DIAGONAL_UP:
-					$objWriter->writeAttribute('diagonalUp', 	'true');
-					$objWriter->writeAttribute('diagonalDown', 	'false');
-					break;
-				case PHPExcel_Style_Borders::DIAGONAL_DOWN:
-					$objWriter->writeAttribute('diagonalUp', 	'false');
-					$objWriter->writeAttribute('diagonalDown', 	'true');
-					break;
-				case PHPExcel_Style_Borders::DIAGONAL_BOTH:
-					$objWriter->writeAttribute('diagonalUp', 	'true');
-					$objWriter->writeAttribute('diagonalDown', 	'true');
-					break;
-			}
+                            // inner edges that are not touching the region should take the 'inside' border properties if they have been set
+                            foreach ($innerEdges as $innerEdge) {
+                                switch ($innerEdge) {
+                                    case 'top':
+                                    case 'bottom':
+                                        // should pick up 'horizontal' border property if set
+                                        if (isset($pStyles['borders']['horizontal'])) {
+                                            $regionStyles['borders'][$innerEdge] = $pStyles['borders']['horizontal'];
+                                        } else {
+                                            unset($regionStyles['borders'][$innerEdge]);
+                                        }
+                                        break;
+                                    case 'left':
+                                    case 'right':
+                                        // should pick up 'vertical' border property if set
+                                        if (isset($pStyles['borders']['vertical'])) {
+                                            $regionStyles['borders'][$innerEdge] = $pStyles['borders']['vertical'];
+                                        } else {
+                                            unset($regionStyles['borders'][$innerEdge]);
+                                        }
+                                        break;
+                                }
+                            }
 
-			// BorderPr
-			$this->_writeBorderPr($objWriter, 'left',		$pBorders->getLeft());
-			$this->_writeBorderPr($objWriter, 'right',		$pBorders->getRight());
-			$this->_writeBorderPr($objWriter, 'top',		$pBorders->getTop());
-			$this->_writeBorderPr($objWriter, 'bottom',		$pBorders->getBottom());
-			$this->_writeBorderPr($objWriter, 'diagonal',	$pBorders->getDiagonal());
-		$objWriter->endElement();
-	}
+                            // apply region style to region by calling applyFromArray() in simple mode
+                            $this->getActiveSheet()->getStyle($range)->applyFromArray($regionStyles, false);
+                        }
+                    }
+                    return $this;
+                }
 
-	/**
-	 * Write Cell Style Xf
-	 *
-	 * @param 	PHPExcel_Shared_XMLWriter			$objWriter 		XML Writer
-	 * @param 	PHPExcel_Style						$pStyle			Style
-	 * @param 	PHPExcel							$pPHPExcel		Workbook
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	private function _writeCellStyleXf(PHPExcel_Shared_XMLWriter $objWriter = null, PHPExcel_Style $pStyle = null, PHPExcel $pPHPExcel = null)
-	{
-		// xf
-		$objWriter->startElement('xf');
-			$objWriter->writeAttribute('xfId', 0);
-			$objWriter->writeAttribute('fontId', 			(int)$this->getParentWriter()->getFontHashTable()->getIndexForHashCode($pStyle->getFont()->getHashCode()));
-            if ($pStyle->getQuotePrefix()) {
-                $objWriter->writeAttribute('quotePrefix', 	    1);
+                // SIMPLE MODE:
+
+                // Selection type, inspect
+                if (preg_match('/^[A-Z]+1:[A-Z]+1048576$/', $pRange)) {
+                    $selectionType = 'COLUMN';
+                } else if (preg_match('/^A[0-9]+:XFD[0-9]+$/', $pRange)) {
+                    $selectionType = 'ROW';
+                } else {
+                    $selectionType = 'CELL';
+                }
+
+                // First loop through columns, rows, or cells to find out which styles are affected by this operation
+                switch ($selectionType) {
+                    case 'COLUMN':
+                        $oldXfIndexes = array();
+                        for ($col = $rangeStart[0]; $col <= $rangeEnd[0]; ++$col) {
+                            $oldXfIndexes[$this->getActiveSheet()->getColumnDimensionByColumn($col)->getXfIndex()] = true;
+                        }
+                        break;
+
+                    case 'ROW':
+                        $oldXfIndexes = array();
+                        for ($row = $rangeStart[1]; $row <= $rangeEnd[1]; ++$row) {
+                            if ($this->getActiveSheet()->getRowDimension($row)->getXfIndex() == null) {
+                                $oldXfIndexes[0] = true; // row without explicit style should be formatted based on default style
+                            } else {
+                                $oldXfIndexes[$this->getActiveSheet()->getRowDimension($row)->getXfIndex()] = true;
+                            }
+                        }
+                        break;
+
+                    case 'CELL':
+                        $oldXfIndexes = array();
+                        for ($col = $rangeStart[0]; $col <= $rangeEnd[0]; ++$col) {
+                            for ($row = $rangeStart[1]; $row <= $rangeEnd[1]; ++$row) {
+                                $oldXfIndexes[$this->getActiveSheet()->getCellByColumnAndRow($col, $row)->getXfIndex()] = true;
+                            }
+                        }
+                        break;
+                }
+
+                // clone each of the affected styles, apply the style array, and add the new styles to the workbook
+                $workbook = $this->getActiveSheet()->getParent();
+                foreach ($oldXfIndexes as $oldXfIndex => $dummy) {
+                    $style = $workbook->getCellXfByIndex($oldXfIndex);
+                    $newStyle = clone $style;
+                    $newStyle->applyFromArray($pStyles);
+
+                    if ($existingStyle = $workbook->getCellXfByHashCode($newStyle->getHashCode())) {
+                        // there is already such cell Xf in our collection
+                        $newXfIndexes[$oldXfIndex] = $existingStyle->getIndex();
+                    } else {
+                        // we don't have such a cell Xf, need to add
+                        $workbook->addCellXf($newStyle);
+                        $newXfIndexes[$oldXfIndex] = $newStyle->getIndex();
+                    }
+                }
+
+                // Loop through columns, rows, or cells again and update the XF index
+                switch ($selectionType) {
+                    case 'COLUMN':
+                        for ($col = $rangeStart[0]; $col <= $rangeEnd[0]; ++$col) {
+                            $columnDimension = $this->getActiveSheet()->getColumnDimensionByColumn($col);
+                            $oldXfIndex = $columnDimension->getXfIndex();
+                            $columnDimension->setXfIndex($newXfIndexes[$oldXfIndex]);
+                        }
+                        break;
+
+                    case 'ROW':
+                        for ($row = $rangeStart[1]; $row <= $rangeEnd[1]; ++$row) {
+                            $rowDimension = $this->getActiveSheet()->getRowDimension($row);
+                            $oldXfIndex = $rowDimension->getXfIndex() === null ?
+                                0 : $rowDimension->getXfIndex(); // row without explicit style should be formatted based on default style
+                            $rowDimension->setXfIndex($newXfIndexes[$oldXfIndex]);
+                        }
+                        break;
+
+                    case 'CELL':
+                        for ($col = $rangeStart[0]; $col <= $rangeEnd[0]; ++$col) {
+                            for ($row = $rangeStart[1]; $row <= $rangeEnd[1]; ++$row) {
+                                $cell = $this->getActiveSheet()->getCellByColumnAndRow($col, $row);
+                                $oldXfIndex = $cell->getXfIndex();
+                                $cell->setXfIndex($newXfIndexes[$oldXfIndex]);
+                            }
+                        }
+                        break;
+                }
+
+            } else {
+                // not a supervisor, just apply the style array directly on style object
+                if (array_key_exists('fill', $pStyles)) {
+                    $this->getFill()->applyFromArray($pStyles['fill']);
+                }
+                if (array_key_exists('font', $pStyles)) {
+                    $this->getFont()->applyFromArray($pStyles['font']);
+                }
+                if (array_key_exists('borders', $pStyles)) {
+                    $this->getBorders()->applyFromArray($pStyles['borders']);
+                }
+                if (array_key_exists('alignment', $pStyles)) {
+                    $this->getAlignment()->applyFromArray($pStyles['alignment']);
+                }
+                if (array_key_exists('numberformat', $pStyles)) {
+                    $this->getNumberFormat()->applyFromArray($pStyles['numberformat']);
+                }
+                if (array_key_exists('protection', $pStyles)) {
+                    $this->getProtection()->applyFromArray($pStyles['protection']);
+                }
+                if (array_key_exists('quotePrefix', $pStyles)) {
+                    $this->_quotePrefix = $pStyles['quotePrefix'];
+                }
             }
+        } else {
+            throw new PHPExcel_Exception("Invalid style array passed.");
+        }
+        return $this;
+    }
 
-			if ($pStyle->getNumberFormat()->getBuiltInFormatCode() === false) {
-				$objWriter->writeAttribute('numFmtId', 			(int)($this->getParentWriter()->getNumFmtHashTable()->getIndexForHashCode($pStyle->getNumberFormat()->getHashCode()) + 164)   );
-			} else {
-				$objWriter->writeAttribute('numFmtId', 			(int)$pStyle->getNumberFormat()->getBuiltInFormatCode());
-			}
+    /**
+     * Get Fill
+     *
+     * @return PHPExcel_Style_Fill
+     */
+    public function getFill()
+    {
+        return $this->_fill;
+    }
 
-			$objWriter->writeAttribute('fillId', 			(int)$this->getParentWriter()->getFillHashTable()->getIndexForHashCode($pStyle->getFill()->getHashCode()));
-			$objWriter->writeAttribute('borderId', 			(int)$this->getParentWriter()->getBordersHashTable()->getIndexForHashCode($pStyle->getBorders()->getHashCode()));
+    /**
+     * Get Font
+     *
+     * @return PHPExcel_Style_Font
+     */
+    public function getFont()
+    {
+        return $this->_font;
+    }
 
-			// Apply styles?
-			$objWriter->writeAttribute('applyFont', 		($pPHPExcel->getDefaultStyle()->getFont()->getHashCode() != $pStyle->getFont()->getHashCode()) ? '1' : '0');
-			$objWriter->writeAttribute('applyNumberFormat', ($pPHPExcel->getDefaultStyle()->getNumberFormat()->getHashCode() != $pStyle->getNumberFormat()->getHashCode()) ? '1' : '0');
-			$objWriter->writeAttribute('applyFill', 		($pPHPExcel->getDefaultStyle()->getFill()->getHashCode() != $pStyle->getFill()->getHashCode()) ? '1' : '0');
-			$objWriter->writeAttribute('applyBorder', 		($pPHPExcel->getDefaultStyle()->getBorders()->getHashCode() != $pStyle->getBorders()->getHashCode()) ? '1' : '0');
-			$objWriter->writeAttribute('applyAlignment',	($pPHPExcel->getDefaultStyle()->getAlignment()->getHashCode() != $pStyle->getAlignment()->getHashCode()) ? '1' : '0');
-			if ($pStyle->getProtection()->getLocked() != PHPExcel_Style_Protection::PROTECTION_INHERIT || $pStyle->getProtection()->getHidden() != PHPExcel_Style_Protection::PROTECTION_INHERIT) {
-				$objWriter->writeAttribute('applyProtection', 'true');
-			}
+    /**
+     * Set font
+     *
+     * @param PHPExcel_Style_Font $font
+     * @return PHPExcel_Style
+     */
+    public function setFont(PHPExcel_Style_Font $font)
+    {
+        $this->_font = $font;
+        return $this;
+    }
 
-			// alignment
-			$objWriter->startElement('alignment');
-				$objWriter->writeAttribute('horizontal', 	$pStyle->getAlignment()->getHorizontal());
-				$objWriter->writeAttribute('vertical', 		$pStyle->getAlignment()->getVertical());
+    /**
+     * Get Borders
+     *
+     * @return PHPExcel_Style_Borders
+     */
+    public function getBorders()
+    {
+        return $this->_borders;
+    }
 
-				$textRotation = 0;
-				if ($pStyle->getAlignment()->getTextRotation() >= 0) {
-					$textRotation = $pStyle->getAlignment()->getTextRotation();
-				} else if ($pStyle->getAlignment()->getTextRotation() < 0) {
-					$textRotation = 90 - $pStyle->getAlignment()->getTextRotation();
-				}
-				$objWriter->writeAttribute('textRotation', 	$textRotation);
+    /**
+     * Get Alignment
+     *
+     * @return PHPExcel_Style_Alignment
+     */
+    public function getAlignment()
+    {
+        return $this->_alignment;
+    }
 
-				$objWriter->writeAttribute('wrapText', 		($pStyle->getAlignment()->getWrapText() ? 'true' : 'false'));
-				$objWriter->writeAttribute('shrinkToFit', 	($pStyle->getAlignment()->getShrinkToFit() ? 'true' : 'false'));
+    /**
+     * Get Number Format
+     *
+     * @return PHPExcel_Style_NumberFormat
+     */
+    public function getNumberFormat()
+    {
+        return $this->_numberFormat;
+    }
 
-				if ($pStyle->getAlignment()->getIndent() > 0) {
-					$objWriter->writeAttribute('indent', 	$pStyle->getAlignment()->getIndent());
-				}
-				if ($pStyle->getAlignment()->getReadorder() > 0) {
-					$objWriter->writeAttribute('readingOrder', 	$pStyle->getAlignment()->getReadorder());
-				}
-			$objWriter->endElement();
+    /**
+     * Get Conditional Styles. Only used on supervisor.
+     *
+     * @return PHPExcel_Style_Conditional[]
+     */
+    public function getConditionalStyles()
+    {
+        return $this->getActiveSheet()->getConditionalStyles($this->getActiveCell());
+    }
 
-			// protection
-			if ($pStyle->getProtection()->getLocked() != PHPExcel_Style_Protection::PROTECTION_INHERIT || $pStyle->getProtection()->getHidden() != PHPExcel_Style_Protection::PROTECTION_INHERIT) {
-				$objWriter->startElement('protection');
-					if ($pStyle->getProtection()->getLocked() != PHPExcel_Style_Protection::PROTECTION_INHERIT) {
-						$objWriter->writeAttribute('locked', 		($pStyle->getProtection()->getLocked() == PHPExcel_Style_Protection::PROTECTION_PROTECTED ? 'true' : 'false'));
-					}
-					if ($pStyle->getProtection()->getHidden() != PHPExcel_Style_Protection::PROTECTION_INHERIT) {
-						$objWriter->writeAttribute('hidden', 		($pStyle->getProtection()->getHidden() == PHPExcel_Style_Protection::PROTECTION_PROTECTED ? 'true' : 'false'));
-					}
-				$objWriter->endElement();
-			}
+    /**
+     * Set Conditional Styles. Only used on supervisor.
+     *
+     * @param PHPExcel_Style_Conditional[] $pValue Array of condtional styles
+     * @return PHPExcel_Style
+     */
+    public function setConditionalStyles($pValue = null)
+    {
+        if (is_array($pValue)) {
+            $this->getActiveSheet()->setConditionalStyles($this->getSelectedCells(), $pValue);
+        }
+        return $this;
+    }
 
-		$objWriter->endElement();
-	}
+    /**
+     * Get Protection
+     *
+     * @return PHPExcel_Style_Protection
+     */
+    public function getProtection()
+    {
+        return $this->_protection;
+    }
 
-	/**
-	 * Write Cell Style Dxf
-	 *
-	 * @param 	PHPExcel_Shared_XMLWriter 		$objWriter 		XML Writer
-	 * @param 	PHPExcel_Style					$pStyle			Style
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	private function _writeCellStyleDxf(PHPExcel_Shared_XMLWriter $objWriter = null, PHPExcel_Style $pStyle = null)
-	{
-		// dxf
-		$objWriter->startElement('dxf');
+    /**
+     * Get quote prefix
+     *
+     * @return boolean
+     */
+    public function getQuotePrefix()
+    {
+        if ($this->_isSupervisor) {
+            return $this->getSharedComponent()->getQuotePrefix();
+        }
+        return $this->_quotePrefix;
+    }
 
-			// font
-			$this->_writeFont($objWriter, $pStyle->getFont());
+    /**
+     * Set quote prefix
+     *
+     * @param boolean $pValue
+     */
+    public function setQuotePrefix($pValue)
+    {
+        if ($pValue == '') {
+            $pValue = false;
+        }
+        if ($this->_isSupervisor) {
+            $styleArray = array('quotePrefix' => $pValue);
+            $this->getActiveSheet()->getStyle($this->getSelectedCells())->applyFromArray($styleArray);
+        } else {
+            $this->_quotePrefix = (boolean) $pValue;
+        }
+        return $this;
+    }
 
-			// numFmt
-			$this->_writeNumFmt($objWriter, $pStyle->getNumberFormat());
+    /**
+     * Get hash code
+     *
+     * @return string Hash code
+     */
+    public function getHashCode()
+    {
+        $hashConditionals = '';
+        foreach ($this->_conditionalStyles as $conditional) {
+            $hashConditionals .= $conditional->getHashCode();
+        }
 
-			// fill
-			$this->_writeFill($objWriter, $pStyle->getFill());
+        return md5(
+              $this->_fill->getHashCode()
+            . $this->_font->getHashCode()
+            . $this->_borders->getHashCode()
+            . $this->_alignment->getHashCode()
+            . $this->_numberFormat->getHashCode()
+            . $hashConditionals
+            . $this->_protection->getHashCode()
+            . ($this->_quotePrefix  ? 't' : 'f')
+            . __CLASS__
+        );
+    }
 
-			// alignment
-			$objWriter->startElement('alignment');
-				if ($pStyle->getAlignment()->getHorizontal() !== NULL) {
-					$objWriter->writeAttribute('horizontal', $pStyle->getAlignment()->getHorizontal());
-				}
-				if ($pStyle->getAlignment()->getVertical() !== NULL) {
-					$objWriter->writeAttribute('vertical', $pStyle->getAlignment()->getVertical());
-				}
+    /**
+     * Get own index in style collection
+     *
+     * @return int
+     */
+    public function getIndex()
+    {
+        return $this->_index;
+    }
 
-				if ($pStyle->getAlignment()->getTextRotation() !== NULL) {
-					$textRotation = 0;
-					if ($pStyle->getAlignment()->getTextRotation() >= 0) {
-						$textRotation = $pStyle->getAlignment()->getTextRotation();
-					} else if ($pStyle->getAlignment()->getTextRotation() < 0) {
-						$textRotation = 90 - $pStyle->getAlignment()->getTextRotation();
-					}
-					$objWriter->writeAttribute('textRotation', 	$textRotation);
-				}
-			$objWriter->endElement();
+    /**
+     * Set own index in style collection
+     *
+     * @param int $pValue
+     */
+    public function setIndex($pValue)
+    {
+        $this->_index = $pValue;
+    }
 
-			// border
-			$this->_writeBorder($objWriter, $pStyle->getBorders());
-
-			// protection
-			if (($pStyle->getProtection()->getLocked() !== NULL) ||
-				($pStyle->getProtection()->getHidden() !== NULL)) {
-				if ($pStyle->getProtection()->getLocked() !== PHPExcel_Style_Protection::PROTECTION_INHERIT ||
-					$pStyle->getProtection()->getHidden() !== PHPExcel_Style_Protection::PROTECTION_INHERIT) {
-					$objWriter->startElement('protection');
-						if (($pStyle->getProtection()->getLocked() !== NULL) &&
-							($pStyle->getProtection()->getLocked() !== PHPExcel_Style_Protection::PROTECTION_INHERIT)) {
-							$objWriter->writeAttribute('locked', ($pStyle->getProtection()->getLocked() == PHPExcel_Style_Protection::PROTECTION_PROTECTED ? 'true' : 'false'));
-						}
-						if (($pStyle->getProtection()->getHidden() !== NULL) &&
-							($pStyle->getProtection()->getHidden() !== PHPExcel_Style_Protection::PROTECTION_INHERIT)) {
-							$objWriter->writeAttribute('hidden', ($pStyle->getProtection()->getHidden() == PHPExcel_Style_Protection::PROTECTION_PROTECTED ? 'true' : 'false'));
-						}
-					$objWriter->endElement();
-				}
-			}
-
-		$objWriter->endElement();
-	}
-
-	/**
-	 * Write BorderPr
-	 *
-	 * @param 	PHPExcel_Shared_XMLWriter		$objWriter 		XML Writer
-	 * @param 	string							$pName			Element name
-	 * @param 	PHPExcel_Style_Border			$pBorder		Border style
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	private function _writeBorderPr(PHPExcel_Shared_XMLWriter $objWriter = null, $pName = 'left', PHPExcel_Style_Border $pBorder = null)
-	{
-		// Write BorderPr
-		if ($pBorder->getBorderStyle() != PHPExcel_Style_Border::BORDER_NONE) {
-			$objWriter->startElement($pName);
-			$objWriter->writeAttribute('style', 	$pBorder->getBorderStyle());
-
-				// color
-				$objWriter->startElement('color');
-				$objWriter->writeAttribute('rgb', 	$pBorder->getColor()->getARGB());
-				$objWriter->endElement();
-
-			$objWriter->endElement();
-		}
-	}
-
-	/**
-	 * Write NumberFormat
-	 *
-	 * @param 	PHPExcel_Shared_XMLWriter			$objWriter 		XML Writer
-	 * @param 	PHPExcel_Style_NumberFormat			$pNumberFormat	Number Format
-	 * @param 	int									$pId			Number Format identifier
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	private function _writeNumFmt(PHPExcel_Shared_XMLWriter $objWriter = null, PHPExcel_Style_NumberFormat $pNumberFormat = null, $pId = 0)
-	{
-		// Translate formatcode
-		$formatCode = $pNumberFormat->getFormatCode();
-
-		// numFmt
-		if ($formatCode !== NULL) {
-			$objWriter->startElement('numFmt');
-				$objWriter->writeAttribute('numFmtId', ($pId + 164));
-				$objWriter->writeAttribute('formatCode', $formatCode);
-			$objWriter->endElement();
-		}
-	}
-
-	/**
-	 * Get an array of all styles
-	 *
-	 * @param 	PHPExcel				$pPHPExcel
-	 * @return 	PHPExcel_Style[]		All styles in PHPExcel
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	public function allStyles(PHPExcel $pPHPExcel = null)
-	{
-		$aStyles = $pPHPExcel->getCellXfCollection();
-
-		return $aStyles;
-	}
-
-	/**
-	 * Get an array of all conditional styles
-	 *
-	 * @param 	PHPExcel							$pPHPExcel
-	 * @return 	PHPExcel_Style_Conditional[]		All conditional styles in PHPExcel
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	public function allConditionalStyles(PHPExcel $pPHPExcel = null)
-	{
-		// Get an array of all styles
-		$aStyles		= array();
-
-		$sheetCount = $pPHPExcel->getSheetCount();
-		for ($i = 0; $i < $sheetCount; ++$i) {
-			foreach ($pPHPExcel->getSheet($i)->getConditionalStylesCollection() as $conditionalStyles) {
-				foreach ($conditionalStyles as $conditionalStyle) {
-					$aStyles[] = $conditionalStyle;
-				}
-			}
-		}
-
-		return $aStyles;
-	}
-
-	/**
-	 * Get an array of all fills
-	 *
-	 * @param 	PHPExcel						$pPHPExcel
-	 * @return 	PHPExcel_Style_Fill[]		All fills in PHPExcel
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	public function allFills(PHPExcel $pPHPExcel = null)
-	{
-		// Get an array of unique fills
-		$aFills 	= array();
-
-		// Two first fills are predefined
-		$fill0 = new PHPExcel_Style_Fill();
-		$fill0->setFillType(PHPExcel_Style_Fill::FILL_NONE);
-		$aFills[] = $fill0;
-
-		$fill1 = new PHPExcel_Style_Fill();
-		$fill1->setFillType(PHPExcel_Style_Fill::FILL_PATTERN_GRAY125);
-		$aFills[] = $fill1;
-		// The remaining fills
-		$aStyles 	= $this->allStyles($pPHPExcel);
-		foreach ($aStyles as $style) {
-			if (!array_key_exists($style->getFill()->getHashCode(), $aFills)) {
-				$aFills[ $style->getFill()->getHashCode() ] = $style->getFill();
-			}
-		}
-
-		return $aFills;
-	}
-
-	/**
-	 * Get an array of all fonts
-	 *
-	 * @param 	PHPExcel						$pPHPExcel
-	 * @return 	PHPExcel_Style_Font[]		All fonts in PHPExcel
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	public function allFonts(PHPExcel $pPHPExcel = null)
-	{
-		// Get an array of unique fonts
-		$aFonts 	= array();
-		$aStyles 	= $this->allStyles($pPHPExcel);
-
-		foreach ($aStyles as $style) {
-			if (!array_key_exists($style->getFont()->getHashCode(), $aFonts)) {
-				$aFonts[ $style->getFont()->getHashCode() ] = $style->getFont();
-			}
-		}
-
-		return $aFonts;
-	}
-
-	/**
-	 * Get an array of all borders
-	 *
-	 * @param 	PHPExcel						$pPHPExcel
-	 * @return 	PHPExcel_Style_Borders[]		All borders in PHPExcel
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	public function allBorders(PHPExcel $pPHPExcel = null)
-	{
-		// Get an array of unique borders
-		$aBorders 	= array();
-		$aStyles 	= $this->allStyles($pPHPExcel);
-
-		foreach ($aStyles as $style) {
-			if (!array_key_exists($style->getBorders()->getHashCode(), $aBorders)) {
-				$aBorders[ $style->getBorders()->getHashCode() ] = $style->getBorders();
-			}
-		}
-
-		return $aBorders;
-	}
-
-	/**
-	 * Get an array of all number formats
-	 *
-	 * @param 	PHPExcel								$pPHPExcel
-	 * @return 	PHPExcel_Style_NumberFormat[]		All number formats in PHPExcel
-	 * @throws 	PHPExcel_Writer_Exception
-	 */
-	public function allNumberFormats(PHPExcel $pPHPExcel = null)
-	{
-		// Get an array of unique number formats
-		$aNumFmts 	= array();
-		$aStyles 	= $this->allStyles($pPHPExcel);
-
-		foreach ($aStyles as $style) {
-			if ($style->getNumberFormat()->getBuiltInFormatCode() === false && !array_key_exists($style->getNumberFormat()->getHashCode(), $aNumFmts)) {
-				$aNumFmts[ $style->getNumberFormat()->getHashCode() ] = $style->getNumberFormat();
-			}
-		}
-
-		return $aNumFmts;
-	}
 }
