@@ -19,299 +19,917 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
  * @category   PHPExcel
- * @package    PHPExcel_Shared
+ * @package    PHPExcel_Writer_Excel5
  * @copyright  Copyright (c) 2006 - 2014 PHPExcel (http://www.codeplex.com/PHPExcel)
- * @license    http://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt	LGPL
- * @version    ##VERSION##, ##DATE##
+ * @license	http://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt	LGPL
+ * @version	##VERSION##, ##DATE##
  */
+
 
 /**
- * PHPExcel_Shared_Excel5
+ * PHPExcel_Writer_Excel5
  *
  * @category   PHPExcel
- * @package    PHPExcel_Shared
+ * @package    PHPExcel_Writer_Excel5
  * @copyright  Copyright (c) 2006 - 2014 PHPExcel (http://www.codeplex.com/PHPExcel)
  */
-class PHPExcel_Shared_Excel5
+class PHPExcel_Writer_Excel5 extends PHPExcel_Writer_Abstract implements PHPExcel_Writer_IWriter
 {
 	/**
-	 * Get the width of a column in pixels. We use the relationship y = ceil(7x) where
-	 * x is the width in intrinsic Excel units (measuring width in number of normal characters)
-	 * This holds for Arial 10
+	 * PHPExcel object
 	 *
-	 * @param PHPExcel_Worksheet $sheet The sheet
-	 * @param string $col The column
-	 * @return integer The width in pixels
-	*/
-	public static function sizeCol($sheet, $col = 'A')
-	{
-		// default font of the workbook
-		$font = $sheet->getParent()->getDefaultStyle()->getFont();
+	 * @var PHPExcel
+	 */
+	private $_phpExcel;
 
-		$columnDimensions = $sheet->getColumnDimensions();
+	/**
+	 * Total number of shared strings in workbook
+	 *
+	 * @var int
+	 */
+	private $_str_total		= 0;
 
-		// first find the true column width in pixels (uncollapsed and unhidden)
-		if ( isset($columnDimensions[$col]) and $columnDimensions[$col]->getWidth() != -1 ) {
+	/**
+	 * Number of unique shared strings in workbook
+	 *
+	 * @var int
+	 */
+	private $_str_unique	= 0;
 
-			// then we have column dimension with explicit width
-			$columnDimension = $columnDimensions[$col];
-			$width = $columnDimension->getWidth();
-			$pixelWidth = PHPExcel_Shared_Drawing::cellDimensionToPixels($width, $font);
+	/**
+	 * Array of unique shared strings in workbook
+	 *
+	 * @var array
+	 */
+	private $_str_table		= array();
 
-		} else if ($sheet->getDefaultColumnDimension()->getWidth() != -1) {
+	/**
+	 * Color cache. Mapping between RGB value and color index.
+	 *
+	 * @var array
+	 */
+	private $_colors;
 
-			// then we have default column dimension with explicit width
-			$defaultColumnDimension = $sheet->getDefaultColumnDimension();
-			$width = $defaultColumnDimension->getWidth();
-			$pixelWidth = PHPExcel_Shared_Drawing::cellDimensionToPixels($width, $font);
+	/**
+	 * Formula parser
+	 *
+	 * @var PHPExcel_Writer_Excel5_Parser
+	 */
+	private $_parser;
 
-		} else {
+	/**
+	 * Identifier clusters for drawings. Used in MSODRAWINGGROUP record.
+	 *
+	 * @var array
+	 */
+	private $_IDCLs;
 
-			// we don't even have any default column dimension. Width depends on default font
-			$pixelWidth = PHPExcel_Shared_Font::getDefaultColumnWidthByFont($font, true);
-		}
+	/**
+	 * Basic OLE object summary information
+	 *
+	 * @var array
+	 */
+	private $_summaryInformation;
 
-		// now find the effective column width in pixels
-		if (isset($columnDimensions[$col]) and !$columnDimensions[$col]->getVisible()) {
-			$effectivePixelWidth = 0;
-		} else {
-			$effectivePixelWidth = $pixelWidth;
-		}
+	/**
+	 * Extended OLE object document summary information
+	 *
+	 * @var array
+	 */
+	private $_documentSummaryInformation;
 
-		return $effectivePixelWidth;
+	/**
+	 * Create a new PHPExcel_Writer_Excel5
+	 *
+	 * @param	PHPExcel	$phpExcel	PHPExcel object
+	 */
+	public function __construct(PHPExcel $phpExcel) {
+		$this->_phpExcel	= $phpExcel;
+
+		$this->_parser		= new PHPExcel_Writer_Excel5_Parser();
 	}
 
 	/**
-	 * Convert the height of a cell from user's units to pixels. By interpolation
-	 * the relationship is: y = 4/3x. If the height hasn't been set by the user we
-	 * use the default value. If the row is hidden we use a value of zero.
+	 * Save PHPExcel to file
 	 *
-	 * @param PHPExcel_Worksheet $sheet The sheet
-	 * @param integer $row The row index (1-based)
-	 * @return integer The width in pixels
+	 * @param	string		$pFilename
+	 * @throws	PHPExcel_Writer_Exception
 	 */
-	public static function sizeRow($sheet, $row = 1)
-	{
-		// default font of the workbook
-		$font = $sheet->getParent()->getDefaultStyle()->getFont();
+	public function save($pFilename = null) {
 
-		$rowDimensions = $sheet->getRowDimensions();
+		// garbage collect
+		$this->_phpExcel->garbageCollect();
 
-		// first find the true row height in pixels (uncollapsed and unhidden)
-		if ( isset($rowDimensions[$row]) and $rowDimensions[$row]->getRowHeight() != -1) {
+		$saveDebugLog = PHPExcel_Calculation::getInstance($this->_phpExcel)->getDebugLog()->getWriteDebugLog();
+		PHPExcel_Calculation::getInstance($this->_phpExcel)->getDebugLog()->setWriteDebugLog(FALSE);
+		$saveDateReturnType = PHPExcel_Calculation_Functions::getReturnDateType();
+		PHPExcel_Calculation_Functions::setReturnDateType(PHPExcel_Calculation_Functions::RETURNDATE_EXCEL);
 
-			// then we have a row dimension
-			$rowDimension = $rowDimensions[$row];
-			$rowHeight = $rowDimension->getRowHeight();
-			$pixelRowHeight = (int) ceil(4 * $rowHeight / 3); // here we assume Arial 10
+		// initialize colors array
+		$this->_colors          = array();
 
-		} else if ($sheet->getDefaultRowDimension()->getRowHeight() != -1) {
+		// Initialise workbook writer
+		$this->_writerWorkbook = new PHPExcel_Writer_Excel5_Workbook($this->_phpExcel,
+																	 $this->_str_total, $this->_str_unique, $this->_str_table,
+																	 $this->_colors, $this->_parser);
 
-			// then we have a default row dimension with explicit height
-			$defaultRowDimension = $sheet->getDefaultRowDimension();
-			$rowHeight = $defaultRowDimension->getRowHeight();
-			$pixelRowHeight = PHPExcel_Shared_Drawing::pointsToPixels($rowHeight);
-
-		} else {
-
-			// we don't even have any default row dimension. Height depends on default font
-			$pointRowHeight = PHPExcel_Shared_Font::getDefaultRowHeightByFont($font);
-			$pixelRowHeight = PHPExcel_Shared_Font::fontSizeToPixels($pointRowHeight);
-
+		// Initialise worksheet writers
+		$countSheets = $this->_phpExcel->getSheetCount();
+		for ($i = 0; $i < $countSheets; ++$i) {
+			$this->_writerWorksheets[$i] = new PHPExcel_Writer_Excel5_Worksheet($this->_str_total, $this->_str_unique,
+																			   $this->_str_table, $this->_colors,
+																			   $this->_parser,
+																			   $this->_preCalculateFormulas,
+																			   $this->_phpExcel->getSheet($i));
 		}
 
-		// now find the effective row height in pixels
-		if ( isset($rowDimensions[$row]) and !$rowDimensions[$row]->getVisible() ) {
-			$effectivePixelRowHeight = 0;
-		} else {
-			$effectivePixelRowHeight = $pixelRowHeight;
+		// build Escher objects. Escher objects for workbooks needs to be build before Escher object for workbook.
+		$this->_buildWorksheetEschers();
+		$this->_buildWorkbookEscher();
+
+		// add 15 identical cell style Xfs
+		// for now, we use the first cellXf instead of cellStyleXf
+		$cellXfCollection = $this->_phpExcel->getCellXfCollection();
+		for ($i = 0; $i < 15; ++$i) {
+			$this->_writerWorkbook->addXfWriter($cellXfCollection[0], true);
 		}
 
-		return $effectivePixelRowHeight;
+		// add all the cell Xfs
+		foreach ($this->_phpExcel->getCellXfCollection() as $style) {
+			$this->_writerWorkbook->addXfWriter($style, false);
+		}
+
+		// add fonts from rich text eleemnts
+		for ($i = 0; $i < $countSheets; ++$i) {
+			foreach ($this->_writerWorksheets[$i]->_phpSheet->getCellCollection() as $cellID) {
+				$cell = $this->_writerWorksheets[$i]->_phpSheet->getCell($cellID);
+				$cVal = $cell->getValue();
+				if ($cVal instanceof PHPExcel_RichText) {
+					$elements = $cVal->getRichTextElements();
+					foreach ($elements as $element) {
+						if ($element instanceof PHPExcel_RichText_Run) {
+							$font = $element->getFont();
+							$this->_writerWorksheets[$i]->_fntHashIndex[$font->getHashCode()] = $this->_writerWorkbook->_addFont($font);
+						}
+					}
+				}
+			}
+		}
+
+		// initialize OLE file
+		$workbookStreamName = 'Workbook';
+		$OLE = new PHPExcel_Shared_OLE_PPS_File(PHPExcel_Shared_OLE::Asc2Ucs($workbookStreamName));
+
+		// Write the worksheet streams before the global workbook stream,
+		// because the byte sizes of these are needed in the global workbook stream
+		$worksheetSizes = array();
+		for ($i = 0; $i < $countSheets; ++$i) {
+			$this->_writerWorksheets[$i]->close();
+			$worksheetSizes[] = $this->_writerWorksheets[$i]->_datasize;
+		}
+
+		// add binary data for global workbook stream
+		$OLE->append($this->_writerWorkbook->writeWorkbook($worksheetSizes));
+
+		// add binary data for sheet streams
+		for ($i = 0; $i < $countSheets; ++$i) {
+			$OLE->append($this->_writerWorksheets[$i]->getData());
+		}
+
+		$this->_documentSummaryInformation = $this->_writeDocumentSummaryInformation();
+		// initialize OLE Document Summary Information
+		if(isset($this->_documentSummaryInformation) && !empty($this->_documentSummaryInformation)){
+			$OLE_DocumentSummaryInformation = new PHPExcel_Shared_OLE_PPS_File(PHPExcel_Shared_OLE::Asc2Ucs(chr(5) . 'DocumentSummaryInformation'));
+			$OLE_DocumentSummaryInformation->append($this->_documentSummaryInformation);
+		}
+
+		$this->_summaryInformation = $this->_writeSummaryInformation();
+		// initialize OLE Summary Information
+		if(isset($this->_summaryInformation) && !empty($this->_summaryInformation)){
+		  $OLE_SummaryInformation = new PHPExcel_Shared_OLE_PPS_File(PHPExcel_Shared_OLE::Asc2Ucs(chr(5) . 'SummaryInformation'));
+		  $OLE_SummaryInformation->append($this->_summaryInformation);
+		}
+
+		// define OLE Parts
+		$arrRootData = array($OLE);
+		// initialize OLE Properties file
+		if(isset($OLE_SummaryInformation)){
+			$arrRootData[] = $OLE_SummaryInformation;
+		}
+		// initialize OLE Extended Properties file
+		if(isset($OLE_DocumentSummaryInformation)){
+			$arrRootData[] = $OLE_DocumentSummaryInformation;
+		}
+
+		$root = new PHPExcel_Shared_OLE_PPS_Root(time(), time(), $arrRootData);
+		// save the OLE file
+		$res = $root->save($pFilename);
+
+		PHPExcel_Calculation_Functions::setReturnDateType($saveDateReturnType);
+		PHPExcel_Calculation::getInstance($this->_phpExcel)->getDebugLog()->setWriteDebugLog($saveDebugLog);
 	}
 
 	/**
-	 * Get the horizontal distance in pixels between two anchors
-	 * The distanceX is found as sum of all the spanning columns widths minus correction for the two offsets
+	 * Set temporary storage directory
 	 *
-	 * @param PHPExcel_Worksheet $sheet
-	 * @param string $startColumn
-	 * @param integer $startOffsetX Offset within start cell measured in 1/1024 of the cell width
-	 * @param string $endColumn
-	 * @param integer $endOffsetX Offset within end cell measured in 1/1024 of the cell width
-	 * @return integer Horizontal measured in pixels
+	 * @deprecated
+	 * @param	string	$pValue		Temporary storage directory
+	 * @throws	PHPExcel_Writer_Exception	when directory does not exist
+	 * @return PHPExcel_Writer_Excel5
 	 */
-	public static function getDistanceX(PHPExcel_Worksheet $sheet, $startColumn = 'A', $startOffsetX = 0, $endColumn = 'A', $endOffsetX = 0)
-	{
-		$distanceX = 0;
-
-		// add the widths of the spanning columns
-		$startColumnIndex = PHPExcel_Cell::columnIndexFromString($startColumn) - 1; // 1-based
-		$endColumnIndex = PHPExcel_Cell::columnIndexFromString($endColumn) - 1; // 1-based
-		for ($i = $startColumnIndex; $i <= $endColumnIndex; ++$i) {
-			$distanceX += self::sizeCol($sheet, PHPExcel_Cell::stringFromColumnIndex($i));
-		}
-
-		// correct for offsetX in startcell
-		$distanceX -= (int) floor(self::sizeCol($sheet, $startColumn) * $startOffsetX / 1024);
-
-		// correct for offsetX in endcell
-		$distanceX -= (int) floor(self::sizeCol($sheet, $endColumn) * (1 - $endOffsetX / 1024));
-
-		return $distanceX;
+	public function setTempDir($pValue = '') {
+		return $this;
 	}
 
 	/**
-	 * Get the vertical distance in pixels between two anchors
-	 * The distanceY is found as sum of all the spanning rows minus two offsets
+	 * Build the Worksheet Escher objects
 	 *
-	 * @param PHPExcel_Worksheet $sheet
-	 * @param integer $startRow (1-based)
-	 * @param integer $startOffsetY Offset within start cell measured in 1/256 of the cell height
-	 * @param integer $endRow (1-based)
-	 * @param integer $endOffsetY Offset within end cell measured in 1/256 of the cell height
-	 * @return integer Vertical distance measured in pixels
 	 */
-	public static function getDistanceY(PHPExcel_Worksheet $sheet, $startRow = 1, $startOffsetY = 0, $endRow = 1, $endOffsetY = 0)
+	private function _buildWorksheetEschers()
 	{
-		$distanceY = 0;
+		// 1-based index to BstoreContainer
+		$blipIndex = 0;
+		$lastReducedSpId = 0;
+		$lastSpId = 0;
 
-		// add the widths of the spanning rows
-		for ($row = $startRow; $row <= $endRow; ++$row) {
-			$distanceY += self::sizeRow($sheet, $row);
+		foreach ($this->_phpExcel->getAllsheets() as $sheet) {
+			// sheet index
+			$sheetIndex = $sheet->getParent()->getIndex($sheet);
+
+			$escher = null;
+
+			// check if there are any shapes for this sheet
+			$filterRange = $sheet->getAutoFilter()->getRange();
+			if (count($sheet->getDrawingCollection()) == 0 && empty($filterRange)) {
+				continue;
+			}
+
+			// create intermediate Escher object
+			$escher = new PHPExcel_Shared_Escher();
+
+			// dgContainer
+			$dgContainer = new PHPExcel_Shared_Escher_DgContainer();
+
+			// set the drawing index (we use sheet index + 1)
+			$dgId = $sheet->getParent()->getIndex($sheet) + 1;
+			$dgContainer->setDgId($dgId);
+			$escher->setDgContainer($dgContainer);
+
+			// spgrContainer
+			$spgrContainer = new PHPExcel_Shared_Escher_DgContainer_SpgrContainer();
+			$dgContainer->setSpgrContainer($spgrContainer);
+
+			// add one shape which is the group shape
+			$spContainer = new PHPExcel_Shared_Escher_DgContainer_SpgrContainer_SpContainer();
+			$spContainer->setSpgr(true);
+			$spContainer->setSpType(0);
+			$spContainer->setSpId(($sheet->getParent()->getIndex($sheet) + 1) << 10);
+			$spgrContainer->addChild($spContainer);
+
+			// add the shapes
+
+			$countShapes[$sheetIndex] = 0; // count number of shapes (minus group shape), in sheet
+
+			foreach ($sheet->getDrawingCollection() as $drawing) {
+				++$blipIndex;
+
+				++$countShapes[$sheetIndex];
+
+				// add the shape
+				$spContainer = new PHPExcel_Shared_Escher_DgContainer_SpgrContainer_SpContainer();
+
+				// set the shape type
+				$spContainer->setSpType(0x004B);
+				// set the shape flag
+				$spContainer->setSpFlag(0x02);
+
+				// set the shape index (we combine 1-based sheet index and $countShapes to create unique shape index)
+				$reducedSpId = $countShapes[$sheetIndex];
+				$spId = $reducedSpId
+					| ($sheet->getParent()->getIndex($sheet) + 1) << 10;
+				$spContainer->setSpId($spId);
+
+				// keep track of last reducedSpId
+				$lastReducedSpId = $reducedSpId;
+
+				// keep track of last spId
+				$lastSpId = $spId;
+
+				// set the BLIP index
+				$spContainer->setOPT(0x4104, $blipIndex);
+
+				// set coordinates and offsets, client anchor
+				$coordinates = $drawing->getCoordinates();
+				$offsetX = $drawing->getOffsetX();
+				$offsetY = $drawing->getOffsetY();
+				$width = $drawing->getWidth();
+				$height = $drawing->getHeight();
+
+				$twoAnchor = PHPExcel_Shared_Excel5::oneAnchor2twoAnchor($sheet, $coordinates, $offsetX, $offsetY, $width, $height);
+
+				$spContainer->setStartCoordinates($twoAnchor['startCoordinates']);
+				$spContainer->setStartOffsetX($twoAnchor['startOffsetX']);
+				$spContainer->setStartOffsetY($twoAnchor['startOffsetY']);
+				$spContainer->setEndCoordinates($twoAnchor['endCoordinates']);
+				$spContainer->setEndOffsetX($twoAnchor['endOffsetX']);
+				$spContainer->setEndOffsetY($twoAnchor['endOffsetY']);
+
+				$spgrContainer->addChild($spContainer);
+			}
+
+			// AutoFilters
+			if(!empty($filterRange)){
+				$rangeBounds = PHPExcel_Cell::rangeBoundaries($filterRange);
+				$iNumColStart = $rangeBounds[0][0];
+				$iNumColEnd = $rangeBounds[1][0];
+
+				$iInc = $iNumColStart;
+				while($iInc <= $iNumColEnd){
+					++$countShapes[$sheetIndex];
+
+					// create an Drawing Object for the dropdown
+					$oDrawing  = new PHPExcel_Worksheet_BaseDrawing();
+					// get the coordinates of drawing
+					$cDrawing   = PHPExcel_Cell::stringFromColumnIndex($iInc - 1) . $rangeBounds[0][1];
+					$oDrawing->setCoordinates($cDrawing);
+					$oDrawing->setWorksheet($sheet);
+
+					// add the shape
+					$spContainer = new PHPExcel_Shared_Escher_DgContainer_SpgrContainer_SpContainer();
+					// set the shape type
+					$spContainer->setSpType(0x00C9);
+					// set the shape flag
+					$spContainer->setSpFlag(0x01);
+
+					// set the shape index (we combine 1-based sheet index and $countShapes to create unique shape index)
+					$reducedSpId = $countShapes[$sheetIndex];
+					$spId = $reducedSpId
+						| ($sheet->getParent()->getIndex($sheet) + 1) << 10;
+					$spContainer->setSpId($spId);
+
+					// keep track of last reducedSpId
+					$lastReducedSpId = $reducedSpId;
+
+					// keep track of last spId
+					$lastSpId = $spId;
+
+					$spContainer->setOPT(0x007F, 0x01040104); // Protection -> fLockAgainstGrouping
+					$spContainer->setOPT(0x00BF, 0x00080008); // Text -> fFitTextToShape
+					$spContainer->setOPT(0x01BF, 0x00010000); // Fill Style -> fNoFillHitTest
+					$spContainer->setOPT(0x01FF, 0x00080000); // Line Style -> fNoLineDrawDash
+					$spContainer->setOPT(0x03BF, 0x000A0000); // Group Shape -> fPrint
+
+					// set coordinates and offsets, client anchor
+					$endCoordinates = PHPExcel_Cell::stringFromColumnIndex(PHPExcel_Cell::stringFromColumnIndex($iInc - 1));
+					$endCoordinates .= $rangeBounds[0][1] + 1;
+
+					$spContainer->setStartCoordinates($cDrawing);
+					$spContainer->setStartOffsetX(0);
+					$spContainer->setStartOffsetY(0);
+					$spContainer->setEndCoordinates($endCoordinates);
+					$spContainer->setEndOffsetX(0);
+					$spContainer->setEndOffsetY(0);
+
+					$spgrContainer->addChild($spContainer);
+					$iInc++;
+				}
+			}
+
+			// identifier clusters, used for workbook Escher object
+			$this->_IDCLs[$dgId] = $lastReducedSpId;
+
+			// set last shape index
+			$dgContainer->setLastSpId($lastSpId);
+
+			// set the Escher object
+			$this->_writerWorksheets[$sheetIndex]->setEscher($escher);
 		}
-
-		// correct for offsetX in startcell
-		$distanceY -= (int) floor(self::sizeRow($sheet, $startRow) * $startOffsetY / 256);
-
-		// correct for offsetX in endcell
-		$distanceY -= (int) floor(self::sizeRow($sheet, $endRow) * (1 - $endOffsetY / 256));
-
-		return $distanceY;
 	}
 
 	/**
-	 * Convert 1-cell anchor coordinates to 2-cell anchor coordinates
-	 * This function is ported from PEAR Spreadsheet_Writer_Excel with small modifications
-	 *
-	 * Calculate the vertices that define the position of the image as required by
-	 * the OBJ record.
-	 *
-	 *		 +------------+------------+
-	 *		 |	 A	  |	  B	 |
-	 *   +-----+------------+------------+
-	 *   |	 |(x1,y1)	 |			|
-	 *   |  1  |(A1)._______|______	  |
-	 *   |	 |	|			  |	 |
-	 *   |	 |	|			  |	 |
-	 *   +-----+----|	BITMAP	|-----+
-	 *   |	 |	|			  |	 |
-	 *   |  2  |	|______________.	 |
-	 *   |	 |			|		(B2)|
-	 *   |	 |			|	 (x2,y2)|
-	 *   +---- +------------+------------+
-	 *
-	 * Example of a bitmap that covers some of the area from cell A1 to cell B2.
-	 *
-	 * Based on the width and height of the bitmap we need to calculate 8 vars:
-	 *	 $col_start, $row_start, $col_end, $row_end, $x1, $y1, $x2, $y2.
-	 * The width and height of the cells are also variable and have to be taken into
-	 * account.
-	 * The values of $col_start and $row_start are passed in from the calling
-	 * function. The values of $col_end and $row_end are calculated by subtracting
-	 * the width and height of the bitmap from the width and height of the
-	 * underlying cells.
-	 * The vertices are expressed as a percentage of the underlying cell width as
-	 * follows (rhs values are in pixels):
-	 *
-	 *	   x1 = X / W *1024
-	 *	   y1 = Y / H *256
-	 *	   x2 = (X-1) / W *1024
-	 *	   y2 = (Y-1) / H *256
-	 *
-	 *	   Where:  X is distance from the left side of the underlying cell
-	 *			   Y is distance from the top of the underlying cell
-	 *			   W is the width of the cell
-	 *			   H is the height of the cell
-	 *
-	 * @param PHPExcel_Worksheet $sheet
-	 * @param string $coordinates E.g. 'A1'
-	 * @param integer $offsetX Horizontal offset in pixels
-	 * @param integer $offsetY Vertical offset in pixels
-	 * @param integer $width Width in pixels
-	 * @param integer $height Height in pixels
-	 * @return array
+	 * Build the Escher object corresponding to the MSODRAWINGGROUP record
 	 */
-	public static function oneAnchor2twoAnchor($sheet, $coordinates, $offsetX, $offsetY, $width, $height)
+	private function _buildWorkbookEscher()
 	{
-		list($column, $row) = PHPExcel_Cell::coordinateFromString($coordinates);
-		$col_start = PHPExcel_Cell::columnIndexFromString($column) - 1;
-		$row_start = $row - 1;
+		$escher = null;
 
-		$x1 = $offsetX;
-		$y1 = $offsetY;
-
-		// Initialise end cell to the same as the start cell
-		$col_end	= $col_start;  // Col containing lower right corner of object
-		$row_end	= $row_start;  // Row containing bottom right corner of object
-
-		// Zero the specified offset if greater than the cell dimensions
-		if ($x1 >= self::sizeCol($sheet, PHPExcel_Cell::stringFromColumnIndex($col_start))) {
-			$x1 = 0;
-		}
-		if ($y1 >= self::sizeRow($sheet, $row_start + 1)) {
-			$y1 = 0;
+		// any drawings in this workbook?
+		$found = false;
+		foreach ($this->_phpExcel->getAllSheets() as $sheet) {
+			if (count($sheet->getDrawingCollection()) > 0) {
+				$found = true;
+				break;
+			}
 		}
 
-		$width	  = $width  + $x1 -1;
-		$height	 = $height + $y1 -1;
-
-		// Subtract the underlying cell widths to find the end cell of the image
-		while ($width >= self::sizeCol($sheet, PHPExcel_Cell::stringFromColumnIndex($col_end))) {
-			$width -= self::sizeCol($sheet, PHPExcel_Cell::stringFromColumnIndex($col_end));
-			++$col_end;
-		}
-
-		// Subtract the underlying cell heights to find the end cell of the image
-		while ($height >= self::sizeRow($sheet, $row_end + 1)) {
-			$height -= self::sizeRow($sheet, $row_end + 1);
-			++$row_end;
-		}
-
-		// Bitmap isn't allowed to start or finish in a hidden cell, i.e. a cell
-		// with zero height or width.
-		if (self::sizeCol($sheet, PHPExcel_Cell::stringFromColumnIndex($col_start)) == 0) {
-			return;
-		}
-		if (self::sizeCol($sheet, PHPExcel_Cell::stringFromColumnIndex($col_end))   == 0) {
-			return;
-		}
-		if (self::sizeRow($sheet, $row_start + 1) == 0) {
-			return;
-		}
-		if (self::sizeRow($sheet, $row_end + 1)   == 0) {
+		// nothing to do if there are no drawings
+		if (!$found) {
 			return;
 		}
 
-		// Convert the pixel values to the percentage value expected by Excel
-		$x1 = $x1	 / self::sizeCol($sheet, PHPExcel_Cell::stringFromColumnIndex($col_start))   * 1024;
-		$y1 = $y1	 / self::sizeRow($sheet, $row_start + 1)   *  256;
-		$x2 = ($width + 1)  / self::sizeCol($sheet, PHPExcel_Cell::stringFromColumnIndex($col_end))	 * 1024; // Distance to right side of object
-		$y2 = ($height + 1) / self::sizeRow($sheet, $row_end + 1)	 *  256; // Distance to bottom of object
+		// if we reach here, then there are drawings in the workbook
+		$escher = new PHPExcel_Shared_Escher();
 
-		$startCoordinates = PHPExcel_Cell::stringFromColumnIndex($col_start) . ($row_start + 1);
-		$endCoordinates = PHPExcel_Cell::stringFromColumnIndex($col_end) . ($row_end + 1);
+		// dggContainer
+		$dggContainer = new PHPExcel_Shared_Escher_DggContainer();
+		$escher->setDggContainer($dggContainer);
 
-		$twoAnchor = array(
-			'startCoordinates' => $startCoordinates,
-			'startOffsetX' => $x1,
-			'startOffsetY' => $y1,
-			'endCoordinates' => $endCoordinates,
-			'endOffsetX' => $x2,
-			'endOffsetY' => $y2,
-		);
+		// set IDCLs (identifier clusters)
+		$dggContainer->setIDCLs($this->_IDCLs);
 
-		return  $twoAnchor;
+		// this loop is for determining maximum shape identifier of all drawing
+		$spIdMax = 0;
+		$totalCountShapes = 0;
+		$countDrawings = 0;
+
+		foreach ($this->_phpExcel->getAllsheets() as $sheet) {
+			$sheetCountShapes = 0; // count number of shapes (minus group shape), in sheet
+
+			if (count($sheet->getDrawingCollection()) > 0) {
+				++$countDrawings;
+
+				foreach ($sheet->getDrawingCollection() as $drawing) {
+					++$sheetCountShapes;
+					++$totalCountShapes;
+
+					$spId = $sheetCountShapes
+						| ($this->_phpExcel->getIndex($sheet) + 1) << 10;
+					$spIdMax = max($spId, $spIdMax);
+				}
+			}
+		}
+
+		$dggContainer->setSpIdMax($spIdMax + 1);
+		$dggContainer->setCDgSaved($countDrawings);
+		$dggContainer->setCSpSaved($totalCountShapes + $countDrawings); // total number of shapes incl. one group shapes per drawing
+
+		// bstoreContainer
+		$bstoreContainer = new PHPExcel_Shared_Escher_DggContainer_BstoreContainer();
+		$dggContainer->setBstoreContainer($bstoreContainer);
+
+		// the BSE's (all the images)
+		foreach ($this->_phpExcel->getAllsheets() as $sheet) {
+			foreach ($sheet->getDrawingCollection() as $drawing) {
+				if ($drawing instanceof PHPExcel_Worksheet_Drawing) {
+
+					$filename = $drawing->getPath();
+
+					list($imagesx, $imagesy, $imageFormat) = getimagesize($filename);
+
+					switch ($imageFormat) {
+
+					case 1: // GIF, not supported by BIFF8, we convert to PNG
+						$blipType = PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE::BLIPTYPE_PNG;
+						ob_start();
+						imagepng(imagecreatefromgif($filename));
+						$blipData = ob_get_contents();
+						ob_end_clean();
+						break;
+
+					case 2: // JPEG
+						$blipType = PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE::BLIPTYPE_JPEG;
+						$blipData = file_get_contents($filename);
+						break;
+
+					case 3: // PNG
+						$blipType = PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE::BLIPTYPE_PNG;
+						$blipData = file_get_contents($filename);
+						break;
+
+					case 6: // Windows DIB (BMP), we convert to PNG
+						$blipType = PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE::BLIPTYPE_PNG;
+						ob_start();
+						imagepng(PHPExcel_Shared_Drawing::imagecreatefrombmp($filename));
+						$blipData = ob_get_contents();
+						ob_end_clean();
+						break;
+
+					default: continue 2;
+
+					}
+
+					$blip = new PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE_Blip();
+					$blip->setData($blipData);
+
+					$BSE = new PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE();
+					$BSE->setBlipType($blipType);
+					$BSE->setBlip($blip);
+
+					$bstoreContainer->addBSE($BSE);
+
+				} else if ($drawing instanceof PHPExcel_Worksheet_MemoryDrawing) {
+
+					switch ($drawing->getRenderingFunction()) {
+
+					case PHPExcel_Worksheet_MemoryDrawing::RENDERING_JPEG:
+						$blipType = PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE::BLIPTYPE_JPEG;
+						$renderingFunction = 'imagejpeg';
+						break;
+
+					case PHPExcel_Worksheet_MemoryDrawing::RENDERING_GIF:
+					case PHPExcel_Worksheet_MemoryDrawing::RENDERING_PNG:
+					case PHPExcel_Worksheet_MemoryDrawing::RENDERING_DEFAULT:
+						$blipType = PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE::BLIPTYPE_PNG;
+						$renderingFunction = 'imagepng';
+						break;
+
+					}
+
+					ob_start();
+					call_user_func($renderingFunction, $drawing->getImageResource());
+					$blipData = ob_get_contents();
+					ob_end_clean();
+
+					$blip = new PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE_Blip();
+					$blip->setData($blipData);
+
+					$BSE = new PHPExcel_Shared_Escher_DggContainer_BstoreContainer_BSE();
+					$BSE->setBlipType($blipType);
+					$BSE->setBlip($blip);
+
+					$bstoreContainer->addBSE($BSE);
+				}
+			}
+		}
+
+		// Set the Escher object
+		$this->_writerWorkbook->setEscher($escher);
 	}
 
+	/**
+	 * Build the OLE Part for DocumentSummary Information
+	 * @return string
+	 */
+	private function _writeDocumentSummaryInformation(){
+
+		// offset: 0; size: 2; must be 0xFE 0xFF (UTF-16 LE byte order mark)
+		$data = pack('v', 0xFFFE);
+		// offset: 2; size: 2;
+		$data .= pack('v', 0x0000);
+		// offset: 4; size: 2; OS version
+		$data .= pack('v', 0x0106);
+		// offset: 6; size: 2; OS indicator
+		$data .= pack('v', 0x0002);
+		// offset: 8; size: 16
+		$data .= pack('VVVV', 0x00, 0x00, 0x00, 0x00);
+		// offset: 24; size: 4; section count
+		$data .= pack('V', 0x0001);
+
+		// offset: 28; size: 16; first section's class id: 02 d5 cd d5 9c 2e 1b 10 93 97 08 00 2b 2c f9 ae
+		$data .= pack('vvvvvvvv', 0xD502, 0xD5CD, 0x2E9C, 0x101B, 0x9793, 0x0008, 0x2C2B, 0xAEF9);
+		// offset: 44; size: 4; offset of the start
+		$data .= pack('V', 0x30);
+
+		// SECTION
+		$dataSection = array();
+		$dataSection_NumProps = 0;
+		$dataSection_Summary = '';
+		$dataSection_Content = '';
+
+		// GKPIDDSI_CODEPAGE: CodePage
+		$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x01),
+							   'offset' => array('pack' => 'V'),
+							   'type' 	=> array('pack' => 'V', 'data' => 0x02), // 2 byte signed integer
+							   'data'	=> array('data' => 1252));
+		$dataSection_NumProps++;
+
+		// GKPIDDSI_CATEGORY : Category
+		if($this->_phpExcel->getProperties()->getCategory()){
+			$dataProp = $this->_phpExcel->getProperties()->getCategory();
+			$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x02),
+								   'offset' => array('pack' => 'V'),
+								   'type' 	=> array('pack' => 'V', 'data' => 0x1E),
+								   'data'	=> array('data' => $dataProp, 'length' => strlen($dataProp)));
+			$dataSection_NumProps++;
+		}
+		// GKPIDDSI_VERSION :Version of the application that wrote the property storage
+		$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x17),
+							   'offset' => array('pack' => 'V'),
+							   'type' 	=> array('pack' => 'V', 'data' => 0x03),
+							   'data'	=> array('pack' => 'V', 'data' => 0x000C0000));
+		$dataSection_NumProps++;
+		// GKPIDDSI_SCALE : FALSE
+		$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x0B),
+							   'offset' => array('pack' => 'V'),
+							   'type' 	=> array('pack' => 'V', 'data' => 0x0B),
+							   'data'	=> array('data' => false));
+		$dataSection_NumProps++;
+		// GKPIDDSI_LINKSDIRTY : True if any of the values for the linked properties have changed outside of the application
+		$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x10),
+							   'offset' => array('pack' => 'V'),
+							   'type' 	=> array('pack' => 'V', 'data' => 0x0B),
+							   'data'	=> array('data' => false));
+		$dataSection_NumProps++;
+		// GKPIDDSI_SHAREDOC : FALSE
+		$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x13),
+							   'offset' => array('pack' => 'V'),
+							   'type' 	=> array('pack' => 'V', 'data' => 0x0B),
+							   'data'	=> array('data' => false));
+		$dataSection_NumProps++;
+		// GKPIDDSI_HYPERLINKSCHANGED : True if any of the values for the _PID_LINKS (hyperlink text) have changed outside of the application
+		$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x16),
+							   'offset' => array('pack' => 'V'),
+							   'type' 	=> array('pack' => 'V', 'data' => 0x0B),
+							   'data'	=> array('data' => false));
+		$dataSection_NumProps++;
+
+		// GKPIDDSI_DOCSPARTS
+		// MS-OSHARED p75 (2.3.3.2.2.1)
+		// Structure is VtVecUnalignedLpstrValue (2.3.3.1.9)
+		// cElements
+		$dataProp = pack('v', 0x0001);
+		$dataProp .= pack('v', 0x0000);
+		// array of UnalignedLpstr
+		  // cch
+		  $dataProp .= pack('v', 0x000A);
+		  $dataProp .= pack('v', 0x0000);
+		  // value
+		  $dataProp .= 'Worksheet'.chr(0);
+
+		$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x0D),
+							   'offset' => array('pack' => 'V'),
+							   'type' 	=> array('pack' => 'V', 'data' => 0x101E),
+							   'data'	=> array('data' => $dataProp, 'length' => strlen($dataProp)));
+		$dataSection_NumProps++;
+
+		// GKPIDDSI_HEADINGPAIR
+		// VtVecHeadingPairValue
+		  // cElements
+		  $dataProp = pack('v', 0x0002);
+		  $dataProp .= pack('v', 0x0000);
+		  // Array of vtHeadingPair
+		    // vtUnalignedString - headingString
+		      // stringType
+		      $dataProp .= pack('v', 0x001E);
+		      // padding
+		      $dataProp .= pack('v', 0x0000);
+		      // UnalignedLpstr
+		        // cch
+		        $dataProp .= pack('v', 0x0013);
+		        $dataProp .= pack('v', 0x0000);
+		        // value
+		        $dataProp .= 'Feuilles de calcul';
+		    // vtUnalignedString - headingParts
+		      // wType : 0x0003 = 32 bit signed integer
+		      $dataProp .= pack('v', 0x0300);
+		      // padding
+		      $dataProp .= pack('v', 0x0000);
+		      // value
+		      $dataProp .= pack('v', 0x0100);
+		      $dataProp .= pack('v', 0x0000);
+			  $dataProp .= pack('v', 0x0000);
+		      $dataProp .= pack('v', 0x0000);
+
+        $dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x0C),
+        					   'offset' => array('pack' => 'V'),
+        					   'type' 	=> array('pack' => 'V', 'data' => 0x100C),
+        					   'data'	=> array('data' => $dataProp, 'length' => strlen($dataProp)));
+        $dataSection_NumProps++;
+
+		// 		4 	Section Length
+		//		4 	Property count
+		//		8 * $dataSection_NumProps (8 =  ID (4) + OffSet(4))
+		$dataSection_Content_Offset = 8 + $dataSection_NumProps * 8;
+		foreach ($dataSection as $dataProp){
+			// Summary
+			$dataSection_Summary .= pack($dataProp['summary']['pack'], $dataProp['summary']['data']);
+			// Offset
+			$dataSection_Summary .= pack($dataProp['offset']['pack'], $dataSection_Content_Offset);
+			// DataType
+			$dataSection_Content .= pack($dataProp['type']['pack'], $dataProp['type']['data']);
+			// Data
+			if($dataProp['type']['data'] == 0x02){ // 2 byte signed integer
+				$dataSection_Content .= pack('V', $dataProp['data']['data']);
+
+				$dataSection_Content_Offset += 4 + 4;
+			}
+			elseif($dataProp['type']['data'] == 0x03){ // 4 byte signed integer
+				$dataSection_Content .= pack('V', $dataProp['data']['data']);
+
+				$dataSection_Content_Offset += 4 + 4;
+			}
+			elseif($dataProp['type']['data'] == 0x0B){ // Boolean
+				if($dataProp['data']['data'] == false){
+					$dataSection_Content .= pack('V', 0x0000);
+				} else {
+					$dataSection_Content .= pack('V', 0x0001);
+				}
+				$dataSection_Content_Offset += 4 + 4;
+			}
+			elseif($dataProp['type']['data'] == 0x1E){ // null-terminated string prepended by dword string length
+				// Null-terminated string
+				$dataProp['data']['data'] .= chr(0);
+				$dataProp['data']['length'] += 1;
+				// Complete the string with null string for being a %4
+				$dataProp['data']['length'] = $dataProp['data']['length'] + ((4 - $dataProp['data']['length'] % 4)==4 ? 0 : (4 - $dataProp['data']['length'] % 4));
+				$dataProp['data']['data'] = str_pad($dataProp['data']['data'], $dataProp['data']['length'], chr(0), STR_PAD_RIGHT);
+
+				$dataSection_Content .= pack('V', $dataProp['data']['length']);
+				$dataSection_Content .= $dataProp['data']['data'];
+
+				$dataSection_Content_Offset += 4 + 4 + strlen($dataProp['data']['data']);
+			}
+			elseif($dataProp['type']['data'] == 0x40){ // Filetime (64-bit value representing the number of 100-nanosecond intervals since January 1, 1601)
+				$dataSection_Content .= $dataProp['data']['data'];
+
+				$dataSection_Content_Offset += 4 + 8;
+			}
+			else {
+				// Data Type Not Used at the moment
+				$dataSection_Content .= $dataProp['data']['data'];
+
+				$dataSection_Content_Offset += 4 + $dataProp['data']['length'];
+			}
+		}
+		// Now $dataSection_Content_Offset contains the size of the content
+
+		// section header
+		// offset: $secOffset; size: 4; section length
+		// 		+ x  Size of the content (summary + content)
+		$data .= pack('V', $dataSection_Content_Offset);
+		// offset: $secOffset+4; size: 4; property count
+		$data .= pack('V', $dataSection_NumProps);
+		// Section Summary
+		$data .= $dataSection_Summary;
+		// Section Content
+		$data .= $dataSection_Content;
+
+		return $data;
+	}
+
+	/**
+	 * Build the OLE Part for Summary Information
+	 * @return string
+	 */
+	private function _writeSummaryInformation(){
+		// offset: 0; size: 2; must be 0xFE 0xFF (UTF-16 LE byte order mark)
+		$data = pack('v', 0xFFFE);
+		// offset: 2; size: 2;
+		$data .= pack('v', 0x0000);
+		// offset: 4; size: 2; OS version
+		$data .= pack('v', 0x0106);
+		// offset: 6; size: 2; OS indicator
+		$data .= pack('v', 0x0002);
+		// offset: 8; size: 16
+		$data .= pack('VVVV', 0x00, 0x00, 0x00, 0x00);
+		// offset: 24; size: 4; section count
+		$data .= pack('V', 0x0001);
+
+		// offset: 28; size: 16; first section's class id: e0 85 9f f2 f9 4f 68 10 ab 91 08 00 2b 27 b3 d9
+		$data .= pack('vvvvvvvv', 0x85E0, 0xF29F, 0x4FF9, 0x1068, 0x91AB, 0x0008, 0x272B, 0xD9B3);
+		// offset: 44; size: 4; offset of the start
+		$data .= pack('V', 0x30);
+
+		// SECTION
+		$dataSection = array();
+		$dataSection_NumProps = 0;
+		$dataSection_Summary = '';
+		$dataSection_Content = '';
+
+		// CodePage : CP-1252
+		$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x01),
+							   'offset' => array('pack' => 'V'),
+							   'type' 	=> array('pack' => 'V', 'data' => 0x02), // 2 byte signed integer
+							   'data'	=> array('data' => 1252));
+		$dataSection_NumProps++;
+
+		//	Title
+		if($this->_phpExcel->getProperties()->getTitle()){
+			$dataProp = $this->_phpExcel->getProperties()->getTitle();
+			$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x02),
+								   'offset' => array('pack' => 'V'),
+								   'type' 	=> array('pack' => 'V', 'data' => 0x1E), // null-terminated string prepended by dword string length
+								   'data'	=> array('data' => $dataProp, 'length' => strlen($dataProp)));
+			$dataSection_NumProps++;
+		}
+		//	Subject
+		if($this->_phpExcel->getProperties()->getSubject()){
+			$dataProp = $this->_phpExcel->getProperties()->getSubject();
+			$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x03),
+								   'offset' => array('pack' => 'V'),
+								   'type' 	=> array('pack' => 'V', 'data' => 0x1E), // null-terminated string prepended by dword string length
+								   'data'	=> array('data' => $dataProp, 'length' => strlen($dataProp)));
+			$dataSection_NumProps++;
+		}
+		//	Author (Creator)
+		if($this->_phpExcel->getProperties()->getCreator()){
+			$dataProp = $this->_phpExcel->getProperties()->getCreator();
+			$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x04),
+								   'offset' => array('pack' => 'V'),
+								   'type' 	=> array('pack' => 'V', 'data' => 0x1E), // null-terminated string prepended by dword string length
+								   'data'	=> array('data' => $dataProp, 'length' => strlen($dataProp)));
+			$dataSection_NumProps++;
+		}
+		//	Keywords
+		if($this->_phpExcel->getProperties()->getKeywords()){
+			$dataProp = $this->_phpExcel->getProperties()->getKeywords();
+			$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x05),
+								   'offset' => array('pack' => 'V'),
+								   'type' 	=> array('pack' => 'V', 'data' => 0x1E), // null-terminated string prepended by dword string length
+								   'data'	=> array('data' => $dataProp, 'length' => strlen($dataProp)));
+			$dataSection_NumProps++;
+		}
+		//	Comments (Description)
+		if($this->_phpExcel->getProperties()->getDescription()){
+			$dataProp = $this->_phpExcel->getProperties()->getDescription();
+			$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x06),
+								   'offset' => array('pack' => 'V'),
+								   'type' 	=> array('pack' => 'V', 'data' => 0x1E), // null-terminated string prepended by dword string length
+								   'data'	=> array('data' => $dataProp, 'length' => strlen($dataProp)));
+			$dataSection_NumProps++;
+		}
+		//	Last Saved By (LastModifiedBy)
+		if($this->_phpExcel->getProperties()->getLastModifiedBy()){
+			$dataProp = $this->_phpExcel->getProperties()->getLastModifiedBy();
+			$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x08),
+								   'offset' => array('pack' => 'V'),
+								   'type' 	=> array('pack' => 'V', 'data' => 0x1E), // null-terminated string prepended by dword string length
+								   'data'	=> array('data' => $dataProp, 'length' => strlen($dataProp)));
+			$dataSection_NumProps++;
+		}
+		//	Created Date/Time
+		if($this->_phpExcel->getProperties()->getCreated()){
+			$dataProp = $this->_phpExcel->getProperties()->getCreated();
+			$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x0C),
+								   'offset' => array('pack' => 'V'),
+								   'type' 	=> array('pack' => 'V', 'data' => 0x40), // Filetime (64-bit value representing the number of 100-nanosecond intervals since January 1, 1601)
+								   'data'	=> array('data' => PHPExcel_Shared_OLE::LocalDate2OLE($dataProp)));
+			$dataSection_NumProps++;
+		}
+		//	Modified Date/Time
+		if($this->_phpExcel->getProperties()->getModified()){
+			$dataProp = $this->_phpExcel->getProperties()->getModified();
+			$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x0D),
+								   'offset' => array('pack' => 'V'),
+								   'type' 	=> array('pack' => 'V', 'data' => 0x40), // Filetime (64-bit value representing the number of 100-nanosecond intervals since January 1, 1601)
+								   'data'	=> array('data' => PHPExcel_Shared_OLE::LocalDate2OLE($dataProp)));
+			$dataSection_NumProps++;
+		}
+		//	Security
+		$dataSection[] = array('summary'=> array('pack' => 'V', 'data' => 0x13),
+							   'offset' => array('pack' => 'V'),
+							   'type' 	=> array('pack' => 'V', 'data' => 0x03), // 4 byte signed integer
+							   'data'	=> array('data' => 0x00));
+		$dataSection_NumProps++;
+
+
+		// 		4 	Section Length
+		//		4 	Property count
+		//		8 * $dataSection_NumProps (8 =  ID (4) + OffSet(4))
+		$dataSection_Content_Offset = 8 + $dataSection_NumProps * 8;
+		foreach ($dataSection as $dataProp){
+			// Summary
+			$dataSection_Summary .= pack($dataProp['summary']['pack'], $dataProp['summary']['data']);
+			// Offset
+			$dataSection_Summary .= pack($dataProp['offset']['pack'], $dataSection_Content_Offset);
+			// DataType
+			$dataSection_Content .= pack($dataProp['type']['pack'], $dataProp['type']['data']);
+			// Data
+			if($dataProp['type']['data'] == 0x02){ // 2 byte signed integer
+				$dataSection_Content .= pack('V', $dataProp['data']['data']);
+
+				$dataSection_Content_Offset += 4 + 4;
+			}
+			elseif($dataProp['type']['data'] == 0x03){ // 4 byte signed integer
+				$dataSection_Content .= pack('V', $dataProp['data']['data']);
+
+				$dataSection_Content_Offset += 4 + 4;
+			}
+			elseif($dataProp['type']['data'] == 0x1E){ // null-terminated string prepended by dword string length
+				// Null-terminated string
+				$dataProp['data']['data'] .= chr(0);
+				$dataProp['data']['length'] += 1;
+				// Complete the string with null string for being a %4
+				$dataProp['data']['length'] = $dataProp['data']['length'] + ((4 - $dataProp['data']['length'] % 4)==4 ? 0 : (4 - $dataProp['data']['length'] % 4));
+				$dataProp['data']['data'] = str_pad($dataProp['data']['data'], $dataProp['data']['length'], chr(0), STR_PAD_RIGHT);
+
+				$dataSection_Content .= pack('V', $dataProp['data']['length']);
+				$dataSection_Content .= $dataProp['data']['data'];
+
+				$dataSection_Content_Offset += 4 + 4 + strlen($dataProp['data']['data']);
+			}
+			elseif($dataProp['type']['data'] == 0x40){ // Filetime (64-bit value representing the number of 100-nanosecond intervals since January 1, 1601)
+				$dataSection_Content .= $dataProp['data']['data'];
+
+				$dataSection_Content_Offset += 4 + 8;
+			}
+			else {
+				// Data Type Not Used at the moment
+			}
+		}
+		// Now $dataSection_Content_Offset contains the size of the content
+
+		// section header
+		// offset: $secOffset; size: 4; section length
+		// 		+ x  Size of the content (summary + content)
+		$data .= pack('V', $dataSection_Content_Offset);
+		// offset: $secOffset+4; size: 4; property count
+		$data .= pack('V', $dataSection_NumProps);
+		// Section Summary
+		$data .= $dataSection_Summary;
+		// Section Content
+		$data .= $dataSection_Content;
+
+		return $data;
+	}
 }
